@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WMS — Workshop Management System
 
-## Getting Started
+Cloud-based management system for a CNG installation/repair workshop:
+customers, vehicles, job orders, payments/receipts, and technician job logs —
+with role-based access enforced **at the database level** (Supabase Postgres
++ Row Level Security), not just in the UI.
 
-First, run the development server:
+- **Business rules (source of truth):** [BUSINESS_RULES.md](./BUSINESS_RULES.md)
+- **Design system:** `.taste-skill/app/direction.json` (framed-sheet
+  direction; light theme, IBM Plex Sans/Mono)
+- **Agent skills:** `.agents/skills/` (manifest in `skills-lock.json`)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Stack
+
+Next.js 16 (App Router, `proxy.ts`) · React 19 · TypeScript · Tailwind v4 ·
+shadcn/ui · Supabase (Postgres, RLS, Auth)
+
+## Getting started
+
+1. `npm install`
+2. Copy `.env.example` → `.env.local` and fill in the Supabase keys
+3. Apply `supabase/migrations/*.sql` **in numeric order** via the Supabase
+   SQL editor (short files with trailing verification SELECTs — check each
+   result before the next paste)
+4. `npm run dev` → http://localhost:3000
+
+## Scripts
+
+| Command | Purpose |
+|---|---|
+| `npm run dev` / `build` / `lint` | standard Next.js |
+| `node --env-file=.env.local scripts/db-health-check.mjs` | DB + RLS health probe |
+| `node --env-file=.env.local scripts/rls-test-suite.mjs` | PRD §13 access-control suite — must exit 0 |
+| `CHROME_PATH=<chrome> node --env-file=.env.local scripts/design-preview.mjs --who admin` | per-role screenshots + numeric design gate |
+
+## Layout
+
 ```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+app/                  routes: (auth) login, (dashboard) role-gated screens
+components/           app shell (L-frame) + shadcn/ui primitives
+lib/                  auth/session, Supabase clients
+supabase/migrations/  schema, functions, RLS — the enforcement layer
+scripts/              health check, RLS suite, design preview gate
+.taste-skill/         dealt design direction + generated previews
+```
