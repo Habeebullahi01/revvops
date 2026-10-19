@@ -1,12 +1,6 @@
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { signOutAction } from "@/app/actions/auth";
@@ -47,8 +41,12 @@ export default async function LoginPage({
   return (
     <Card className="w-full max-w-sm">
       <CardHeader className="text-center">
-        <CardTitle className="text-xl">Workshop Management System</CardTitle>
-        <CardDescription>Sign in to your account</CardDescription>
+        <h1 className="text-title font-semibold text-balance">
+          Workshop Management System
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Sign in to your account
+        </p>
       </CardHeader>
       <CardContent className="space-y-4">
         {errorKey ? (

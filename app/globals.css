@@ -4,11 +4,23 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * ── Design system: "framed-sheet" (tasteskill app sheet) ─────────────────────
+ * Source: .taste-skill/app/direction.json — adopt the sheet whole.
+ * Light only for now; every colour is a var, so a dark theme is a later
+ * addition (the untouched .dark block below is the hook for it).
+ *
+ * Naming notes vs the sheet:
+ *   sheet --accent  -> --brand   (shadcn owns --accent for hover fills)
+ *   sheet --muted   -> --ink-muted (shadcn's --muted is a fill, not ink)
+ * Rebranding later touches --brand and the pills/chart values derived from it.
+ */
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-plex-sans);
+  --font-mono: var(--font-plex-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -39,50 +51,132 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
+  /* sheet tokens exposed as utilities */
+  --color-rule: var(--rule);
+  --color-status-pending: var(--status-pending);
+  --color-status-in-progress: var(--status-in-progress);
+  --color-status-waiting-parts: var(--status-waiting-parts);
+  --color-status-completed: var(--status-completed);
+  --color-status-paid: var(--status-paid);
+  --color-status-cancelled: var(--status-cancelled);
+
+  /* type scale (sheet §3) */
+  --text-title: var(--fs-title);
+  --text-title--line-height: 1.3;
+  --text-section: var(--fs-section);
+  --text-section--line-height: 1.4;
+  --text-kpi: var(--fs-kpi);
+  --text-kpi--line-height: 1.2;
+  --text-body: var(--fs-body);
+  --text-body--line-height: 1.5;
+  --text-small: var(--fs-small);
+  --text-small--line-height: 1.4;
+
+  /* radius: sheet says control 6, card 8, sheet 16 */
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
   --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* ── framed-sheet tokens, verbatim from the sheet ── */
+  --ground: #f9fbfc; /* frame chrome: sidebar + topbar tint */
+  --surface: #ffffff; /* the work sheet */
+  --raised: #f4f6f8; /* secondary / muted fills */
+  --active: #ebedee; /* active nav fill */
+  --border: #e8eaec; /* component edges */
+  --rule: #f0f1f2; /* hairlines inside tables/lists */
+  --control: #cdced1; /* control outlines */
+  --text: #131416;
+  --ink-muted: #5d5f60;
+  --brand: #1b6c80; /* sheet's --accent — the one accent token */
+  --positive: #1e7b4f;
+  --negative: #c4242a;
+  --warning: #92400e;
+  --chart-1: #1b6c80;
+  --chart-2: #2f70bb;
+  --chart-3: #a86f0c;
+  --chart-4: #5d5f60; /* sheet gives 3 series; 4-5 stay neutral */
+  --chart-5: #8a8d90;
+
+  /* status pills (sheet + one derived brand tint for in-progress) */
+  --pill-positive-bg: #dcfae5;
+  --pill-positive-ink: #04250e;
+  --pill-negative-bg: #ffedea;
+  --pill-negative-ink: #831c1e;
+  --pill-warning-bg: #fffbeb;
+  --pill-warning-ink: #92400e;
+  --pill-neutral-bg: #ebedee;
+  --pill-neutral-ink: #353736;
+  --pill-progress-bg: #e3f1f4;
+  --pill-progress-ink: #124956;
+
+  /* status solids for dots/rules — job_orders.status (0001_schema.sql) */
+  --status-pending: #767879;
+  --status-in-progress: var(--brand);
+  --status-waiting-parts: #a86f0c;
+  --status-completed: var(--positive);
+  --status-paid: var(--positive);
+  --status-cancelled: var(--negative);
+
+  /* sheet geometry (§2) */
+  --radius-card: 8px;
+  --radius-control: 6px;
+  --radius-sheet: 16px;
+  --sheet-inset: 8px;
+  --row-height: 48px;
+  --sidebar-width: 228px;
+  --gap: 24px;
+  --pad: 24px;
+  --control-height: 32px;
+
+  /* sheet type sizes (§3) */
+  --fs-title: 22px;
+  --fs-section: 16px;
+  --fs-kpi: 28px;
+  --fs-body: 14px;
+  --fs-small: 12px;
+
+  /* ── shadcn semantic map (drives every ui/ component) ── */
+  --background: var(--ground);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --primary: var(--brand); /* the one filled-button style */
+  --primary-foreground: #ffffff;
+  --secondary: var(--raised);
+  --secondary-foreground: var(--text);
+  --muted: var(--raised);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--active);
+  --accent-foreground: var(--text);
+  --destructive: var(--negative);
+  /* --border needs no mapping: the sheet's value above already serves shadcn */
+  --input: var(--border);
+  --ring: var(--brand);
+  --radius: 6px; /* base of the shadcn radius scale = control radius */
+
+  --sidebar: var(--ground); /* the L-frame shares one tint, no internal rules */
+  --sidebar-foreground: var(--text);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--active);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-border: transparent;
+  --sidebar-ring: var(--brand);
 }
 
+/*
+ * Future dark theme. Not built yet (light only, var-based) — values must be
+ * re-derived from the sheet rather than copied from the shadcn default.
+ */
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
@@ -102,11 +196,6 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -126,5 +215,9 @@
   }
   html {
     @apply font-sans;
+  }
+  /* sheet §3: tabular figures on every table, KPI and updating number */
+  table {
+    font-variant-numeric: tabular-nums;
   }
 }

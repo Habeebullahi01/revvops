@@ -1,11 +1,4 @@
 import { requireRole } from "@/lib/auth";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
 // Session-reading page: renders at request time (blocking, see layout).
 export const instant = false;
@@ -13,20 +6,16 @@ export const instant = false;
 export default async function JobOrdersPage() {
   await requireRole(["admin", "manager", "reception"]);
 
+  // Sheet screen pattern "list": title row on the page ground, not a card.
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Job Orders</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle>Job order list</CardTitle>
-          <CardDescription>Arrives in Phase 1 (PRD §11)</CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Search, filters, and the create-job-order flow (sequential
-          JO-YYYY-NNNN numbering) will live here. Technicians are redirected
-          away from this route — they only ever see their assigned jobs.
-        </CardContent>
-      </Card>
+    <div className="space-y-1.5">
+      <h1 className="text-title font-semibold">Job Orders</h1>
+      <p className="max-w-2xl text-sm text-muted-foreground">
+        Search, filters, and the create-job-order flow (sequential
+        JO-YYYY-NNNN numbering) arrive in Phase 1 (PRD §11). Technicians are
+        redirected away from this route — they only ever see their assigned
+        jobs.
+      </p>
     </div>
   );
 }
