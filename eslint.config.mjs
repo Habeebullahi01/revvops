@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // vendored agent skills + generated design artifacts (not app code):
+    ".agents/**",
+    ".taste-skill/**",
   ]),
 ]);
 

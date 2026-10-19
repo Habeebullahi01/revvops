@@ -58,8 +58,10 @@
   --color-status-in-progress: var(--status-in-progress);
   --color-status-waiting-parts: var(--status-waiting-parts);
   --color-status-completed: var(--status-completed);
-  --color-status-paid: var(--status-paid);
   --color-status-cancelled: var(--status-cancelled);
+  --color-status-unpaid: var(--status-unpaid);
+  --color-status-part-paid: var(--status-part-paid);
+  --color-status-paid: var(--status-paid);
 
   /* type scale (sheet §3) */
   --text-title: var(--fs-title);
@@ -116,13 +118,17 @@
   --pill-progress-bg: #e3f1f4;
   --pill-progress-ink: #124956;
 
-  /* status solids for dots/rules — job_orders.status (0001_schema.sql) */
+  /* status solids for dots/rules — two domains (BUSINESS_RULES.md §3) */
+  /* execution_status (0008): pending|in_progress|waiting_parts|completed|cancelled */
   --status-pending: #767879;
   --status-in-progress: var(--brand);
   --status-waiting-parts: #a86f0c;
   --status-completed: var(--positive);
-  --status-paid: var(--positive);
   --status-cancelled: var(--negative);
+  /* financial_status (0008): unpaid|part_paid|paid — officers only */
+  --status-unpaid: #767879;      /* neutral: money not due-yet is normal */
+  --status-part-paid: #a86f0c;   /* amber: partially settled */
+  --status-paid: var(--positive);
 
   /* sheet geometry (§2) */
   --radius-card: 8px;

@@ -12,9 +12,10 @@ export default async function JobOrdersPage() {
       <h1 className="text-title font-semibold">Job Orders</h1>
       <p className="max-w-2xl text-sm text-muted-foreground">
         Search, filters, and the create-job-order flow (sequential
-        JO-YYYY-NNNN numbering) arrive in Phase 1 (PRD §11). Technicians are
-        redirected away from this route — they only ever see their assigned
-        jobs.
+        JO-YYYY-NNNN numbering) arrive in Phase 1 (PRD §11). This route
+        stays officer-only (admin/manager/reception) because it renders
+        financial columns — technicians reach job orders through the
+        vehicle lens instead, with zero financials (BUSINESS_RULES.md §5).
       </p>
     </div>
   );

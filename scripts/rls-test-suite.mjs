@@ -1,6 +1,9 @@
 // PRD §13 RLS / security test suite.
 // Run: node --env-file=.env.local scripts/rls-test-suite.mjs
 //
+// Business rules that supersede the PRD live in BUSINESS_RULES.md — this
+// suite is the executable spec for every data-access rule there.
+//
 // Signs in as each seeded test role (scripts/create-test-users.mjs) and
 // asserts the PRD permissions matrix at the database level. Seeds a minimal
 // fixture via the service role, tracks every row it creates, and restores
@@ -71,7 +74,7 @@ const svc = {
 
 // ---- fixtures ----
 const created = { customers: [], vehicles: [], job_orders: [], job_order_items: [], payments: [], receipts: [], job_logs: [], service_history: [], audit_logs: [] };
-let originalJob1Status = "pending";
+let originalJob1Exec = "pending";
 let originalCounter = 0;
 
 function idOf(d) {
@@ -113,17 +116,20 @@ async function main() {
 
   const job1 = await svc.post("job_orders", {
     job_number: "JO-FIXTURE-0001", customer_id: customerId, vehicle_id: vehicleId,
-    billing_type: "upfront", status: "pending", complaint: "Fixture job assigned to technician",
+    billing_type: "upfront", execution_status: "pending", complaint: "Fixture job assigned to technician",
     estimated_amount: 100, assigned_technician_id: ids.technician, created_by: ids.admin,
   });
+  // Created part-paid: officers may open a job order with partial or no
+  // payment (BUSINESS_RULES.md §3.2).
   const job2 = await svc.post("job_orders", {
     job_number: "JO-FIXTURE-0002", customer_id: customerId, vehicle_id: vehicleId,
-    billing_type: "post_service", status: "pending", complaint: "Fixture job with payment",
+    billing_type: "post_service", execution_status: "pending", financial_status: "part_paid",
+    complaint: "Fixture job with payment",
     estimated_amount: 500, assigned_technician_id: null, created_by: ids.admin,
   });
   created.job_orders.push(idOf(job1.data), idOf(job2.data));
   const [job1Id, job2Id] = created.job_orders;
-  originalJob1Status = job1.data[0].status;
+  originalJob1Exec = job1.data[0].execution_status;
 
   created.job_order_items.push(idOf((await svc.post("job_order_items", {
     job_order_id: job1Id, description: "Fixture labor", item_type: "labor",
@@ -157,14 +163,20 @@ async function main() {
   let r = await rest(tok.technician, "GET", "job_orders?select=id");
   check(G, "T01 table job_orders returns ZERO rows (2 exist, incl. own)", r.status === 200 && r.data.length === 0, `got ${r.status}, ${r.data?.length} rows`);
 
-  r = await rest(tok.technician, "GET", "job_orders_tech_view?select=id,job_number,status");
-  check(G, "T02 tech view shows ONLY assigned job", r.status === 200 && r.data.length === 1 && r.data[0].id === job1Id, `got ${r.status}, ${r.data?.length} rows`);
+  // T02 — vehicle-lens rule (BUSINESS_RULES.md §5, migration 0009): the
+  // tech view exposes ALL job orders, assigned or not.
+  r = await rest(tok.technician, "GET", "job_orders_tech_view?select=id,job_number,execution_status");
+  const t02ids = (r.data ?? []).map((x) => x.id);
+  check(G, "T02 tech view shows ALL jobs incl. UNASSIGNED (vehicle lens)", r.status === 200 && t02ids.includes(job1Id) && t02ids.includes(job2Id), `got ${r.status}, ${r.data?.length} rows, has assigned=${t02ids.includes(job1Id)}, has unassigned=${t02ids.includes(job2Id)}`);
 
   r = await rest(tok.technician, "GET", "job_orders_tech_view?select=estimated_amount");
   check(G, "T03 tech view has NO financial columns (query rejected)", r.status >= 400, `status ${r.status}`);
 
   r = await rest(tok.technician, "GET", "job_orders_tech_view?select=actual_amount");
   check(G, "T03b tech view has NO actual_amount column", r.status >= 400, `status ${r.status}`);
+
+  r = await rest(tok.technician, "GET", "job_orders_tech_view?select=financial_status");
+  check(G, "T03c tech view has NO financial_status column", r.status >= 400, `status ${r.status}`);
 
   // NOTE: document_sequences has no id column — select its PK instead.
   for (const [n, table, query] of [
@@ -181,15 +193,15 @@ async function main() {
   r = await rest(tok.technician, "PATCH", "document_sequences?document_type=eq.job_order&year=eq." + YEAR, { last_number: 999999 }, "return=representation");
   check(G, "T09 cannot tamper with numbering counters (0 rows)", r.status === 200 && r.data?.length === 0, `status ${r.status}, rows ${r.data?.length ?? "?"}`);
 
-  r = await rest(tok.technician, "POST", "job_logs", { job_order_id: job1Id, technician_id: ids.technician, status: "in_progress", notes: "rls-suite: status update" }, "return=representation");
+  r = await rest(tok.technician, "POST", "job_logs", { job_order_id: job1Id, technician_id: ids.technician, execution_status: "in_progress", notes: "rls-suite: status update" }, "return=representation");
   const techLogId = idOf(r.data);
   if (techLogId) created.job_logs.push(techLogId);
   check(G, "T10 can insert job log on ASSIGNED job", r.status === 201, `status ${r.status}`);
 
-  r = await rest(tok.technician, "POST", "job_logs", { job_order_id: job2Id, technician_id: ids.technician, status: "in_progress", notes: "rls-suite" }, "return=representation");
+  r = await rest(tok.technician, "POST", "job_logs", { job_order_id: job2Id, technician_id: ids.technician, execution_status: "in_progress", notes: "rls-suite" }, "return=representation");
   check(G, "T11 cannot insert job log on UNASSIGNED job", r.status >= 400, `status ${r.status}`);
 
-  r = await rest(tok.technician, "POST", "job_logs", { job_order_id: job1Id, technician_id: ids.manager, status: "completed", notes: "rls-suite spoof" }, "return=representation");
+  r = await rest(tok.technician, "POST", "job_logs", { job_order_id: job1Id, technician_id: ids.manager, execution_status: "completed", notes: "rls-suite spoof" }, "return=representation");
   check(G, "T12 cannot insert job log under ANOTHER technician's ID", r.status >= 400, `status ${r.status}`);
 
   r = await rest(tok.technician, "POST", "job_orders", {
@@ -200,6 +212,10 @@ async function main() {
 
   r = await rest(tok.technician, "PATCH", `job_orders?id=eq.${job1Id}`, { estimated_amount: 99999 }, "return=representation");
   check(G, "T14 cannot update job orders (0 rows)", r.status === 200 && r.data?.length === 0, `status ${r.status}, rows ${r.data?.length ?? "?"}`);
+
+  // Financial status is officer-only (BUSINESS_RULES.md §3.2).
+  r = await rest(tok.technician, "PATCH", `job_orders?id=eq.${job1Id}`, { financial_status: "paid" }, "return=representation");
+  check(G, "T14c cannot write financial_status (0 rows)", r.status === 200 && r.data?.length === 0, `status ${r.status}, rows ${r.data?.length ?? "?"}`);
 
   r = await rest(tok.technician, "PATCH", `payments?id=eq.${paymentId}`, { amount: 1 }, "return=representation");
   check(G, "T14b cannot update payments (0 rows)", r.status === 200 && r.data?.length === 0, `status ${r.status}, rows ${r.data?.length ?? "?"}`);
@@ -240,11 +256,11 @@ async function main() {
   r = await rest(tok.technician, "DELETE", `service_history?id=eq.${shId}`, null, "return=representation");
   check(G, "T20b CANNOT delete service history (0 rows)", r.status === 200 && r.data?.length === 0, `status ${r.status}, rows ${r.data?.length ?? "?"}`);
 
-  // T21: status-sync trigger (migration 0002) — insert log, job status must follow
-  r = await svc.get(`job_orders?id=eq.${job1Id}&select=status`);
-  const statusNow = r.data?.[0]?.status;
-  const viewStatus = (await rest(tok.technician, "GET", "job_orders_tech_view?select=status&id=eq." + job1Id)).data?.[0]?.status;
-  check(G, "T21 trigger synced job status from technician's job log", statusNow === "in_progress" && viewStatus === "in_progress", `table=${statusNow} view=${viewStatus}`);
+  // T21: status-sync trigger (0002 + 0008) — insert log, execution status must follow
+  r = await svc.get(`job_orders?id=eq.${job1Id}&select=execution_status`);
+  const execNow = r.data?.[0]?.execution_status;
+  const viewExec = (await rest(tok.technician, "GET", "job_orders_tech_view?select=execution_status&id=eq." + job1Id)).data?.[0]?.execution_status;
+  check(G, "T21 trigger synced job execution status from technician's job log", execNow === "in_progress" && viewExec === "in_progress", `table=${execNow} view=${viewExec}`);
 
   // T22: numbering RPC must be denied to technicians (see 0004_hardening.sql)
   r = await rest(tok.technician, "POST", "rpc/get_next_document_number", { p_document_type: "job_order" });
@@ -258,6 +274,11 @@ async function main() {
 
   r = await rest(tok.technician, "GET", "profiles?select=id");
   check(G, "T25 CAN view profiles (team names shown in UI)", r.status === 200 && r.data.length >= 4, `got ${r.data?.length} rows`);
+
+  // Vehicle-lens rule (BUSINESS_RULES.md §5): tech searches vehicles and
+  // finds the owner (T23) + every job order for that vehicle (T02).
+  r = await rest(tok.technician, "GET", "vehicles?select=id,license_plate");
+  check(G, "T26 CAN search vehicles (vehicle lens)", r.status === 200 && r.data.length >= 1, `got ${r.data?.length} rows`);
 
   // ============================================================
   // RECEPTION — front desk, no reprint, no dashboard/audit
@@ -273,6 +294,11 @@ async function main() {
   r = await rest(tok.reception, "PATCH", `job_orders?id=eq.${job1Id}`, { estimated_amount: 120 }, "return=representation");
   check(R, "R03 CAN edit job orders", r.status === 200 && r.data?.length === 1, `status ${r.status}`);
   await svc.patch(`job_orders?id=eq.${job1Id}`, { estimated_amount: 100 });
+
+  // Financial status is officer-owned (BUSINESS_RULES.md §3.2).
+  r = await rest(tok.reception, "PATCH", `job_orders?id=eq.${job1Id}`, { financial_status: "part_paid" }, "return=representation");
+  check(R, "R03b CAN update financial_status (officer-only rule)", r.status === 200 && r.data?.length === 1, `status ${r.status}`);
+  await svc.patch(`job_orders?id=eq.${job1Id}`, { financial_status: "unpaid" });
 
   r = await rest(tok.reception, "POST", "receipts", {
     receipt_number: `RCP-FIXTURE-R-${Date.now()}`, payment_id: paymentId, job_order_id: job2Id,
@@ -370,7 +396,7 @@ async function main() {
   await delBy("job_orders", created.job_orders);
   await delBy("vehicles", created.vehicles);
   await delBy("customers", created.customers);
-  await svc.patch(`job_orders?job_number=eq.JO-FIXTURE-0001`, { status: originalJob1Status });
+  await svc.patch(`job_orders?job_number=eq.JO-FIXTURE-0001`, { execution_status: originalJob1Exec });
   await svc.patch(`document_sequences?document_type=eq.job_order&year=eq.${YEAR}`, { last_number: originalCounter });
 
   // ---- summary ----
