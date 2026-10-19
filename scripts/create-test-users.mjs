@@ -33,8 +33,9 @@ for (const u of USERS) {
     { headers: hdr },
   ).then((r) => r.json());
 
-  if (Array.isArray(existing) && existing.length > 0) {
-    userId = existing[0].id;
+  const userList = Array.isArray(existing) ? existing : existing?.users;
+  if (Array.isArray(userList) && userList.length > 0) {
+    userId = userList[0].id;
     log(true, `auth user exists: ${u.email}`);
   } else {
     const res = await fetch(`${URL_}/auth/v1/admin/users`, {
