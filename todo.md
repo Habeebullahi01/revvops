@@ -24,8 +24,8 @@ Working list. Tick things off as they land; keep the reasons short.
 
 - **VIN** — `vehicles.vin` already exists (0001) and is searched/edited today; decide whether to surface it on the invoice form and in the vehicle cards.
 - Adding a vehicle to an *existing* customer has no UI yet (`NewCustomerDialog` always creates a customer too).
-- `job_orders_tech_view` — confirm it still hides financial columns after the 0014 policy rebuild.
-- Repair `scripts/rls-test-suite.mjs` and get it green; reconcile `0010_invoices.sql` with the applied DB.
+- `job_orders_tech_view` verified after 0014: technicians still see every job's execution fields and still get zero rows (and zero updates) on `job_orders` itself.
+- Repair `scripts/rls-test-suite.mjs` and get it green (0010 on disk matches the applied columns).
 - Role/privilege matrix redefinition (BUSINESS_RULES §8) — OPEN.
 - Invoice state machine: draft/issued — OPEN (schema has no `status` column today).
 - Receipts: one per payment, reprint must not duplicate (Phase 2).
