@@ -81,13 +81,33 @@ states). Schema: migrations `0008`/`0009`.
   read path (the technician view omits the column entirely). [RLS+SCHEMA]
 - A job order may be **created with partial payment or with no payment at
   all** — a front-desk decision at intake. The officer sets
-  `financial_status`; it is not derived (for now — see §8.2).
+  `financial_status`; it is not derived (for now — see §8.2). The one
+  exception is a job order raised *from an invoice*, which requires ≥ 50%
+  of that invoice to be paid first (§3.3).
 - The value set may be extended when invoicing arrives. [OPEN]
 
-### 3.3 Invoicing — deferred
+### 3.3 Invoicing — built (Phase 1, 2026-10-20)
 
-An invoicing system is planned but **not built now** (decision
-2026-10-19). No invoicing tables, numbers, or statuses exist today.
+Invoice-first: the invoice exists before any money moves and before any
+job order exists. [SCHEMA]
+
+- **`invoices`** holds customer, vehicle, complaint, `cost_breakdown`
+  (JSONB labour/parts lines) and `total_amount`. There is deliberately
+  **no technician and no status column** on an invoice. [SCHEMA]
+- An invoice never creates a job order by itself. The only bridge is the
+  explicit *Create job order* action on the invoice's detail page, and only
+  once **≥ 50% of the invoice total is paid** — enforced in the UI *and* in
+  `createJobOrderFromInvoice` (lib/invoice-rules.ts). [APP]
+- Payments record against the invoice directly: `payments.invoice_id`,
+  with `job_order_id` nullable since 0013, so money can arrive before a
+  job order exists. [SCHEMA]
+- An invoice's paid / part paid / unpaid state is **derived on read** from
+  the sum of its payments vs `total_amount`; nothing stores it. [APP]
+- Officers only (admin, manager, reception) read or write invoices;
+  technicians have no path to them at all. [RLS]
+- Surfaces: `/invoices` (list), `/invoices/new` (form), `/invoices/[id]`
+  (detail: payments + job-order raise). Creating an invoice lands on the
+  detail page.
 
 ## 4. Data access matrix (as enforced today)
 
@@ -103,6 +123,7 @@ An invoicing system is planned but **not built now** (decision
 | Job logs | RW | RW | RW | R; INSERT own/assigned |
 | Service history | RW | RW | RW | INSERT own only |
 | Payments | RW | RW | RW | — |
+| Invoices | RW | RW | RW | — |
 | Receipts | RW + reprint | RW + reprint | R + issue (non-dup) | — |
 | Document counters (RPC) | ✓ | ✓ | ✓ | — |
 | Audit log | RW | R | — | own-entry insert only² |
