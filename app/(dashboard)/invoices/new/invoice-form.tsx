@@ -28,6 +28,7 @@ import {
   NewCustomerDialog,
   type CreatedCustomer,
 } from "@/components/new-customer-dialog";
+import { NewVehicleDialog } from "@/components/new-vehicle-dialog";
 
 interface Customer {
   id: string;
@@ -142,6 +143,9 @@ export function InvoiceForm() {
     seed: 0,
     defaultName: "",
   });
+
+  // ---- add-vehicle dialog for the customer already selected ----
+  const [vehicleDialogOpen, setVehicleDialogOpen] = useState(false);
 
   const selectedCustomer = customers.find((c) => c.id === customerId) ?? null;
   const customerVehicles = useMemo(
@@ -435,12 +439,25 @@ export function InvoiceForm() {
 
             {/* ── Vehicle ──────────────────────────────────────────── */}
             <div className="space-y-2">
-              <Label htmlFor="invoice-vehicle">
-                Vehicle{" "}
-                <span aria-hidden className="text-destructive">
-                  *
-                </span>
-              </Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="invoice-vehicle">
+                  Vehicle{" "}
+                  <span aria-hidden className="text-destructive">
+                    *
+                  </span>
+                </Label>
+                {customerId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setVehicleDialogOpen(true)}
+                  >
+                    <PlusIcon className="size-4" />
+                    Add vehicle
+                  </Button>
+                )}
+              </div>
               <div className="relative">
                 <select
                   id="invoice-vehicle"
@@ -468,7 +485,7 @@ export function InvoiceForm() {
               </div>
               {customerId && customerVehicles.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Use New customer to add a vehicle for them.
+                  No vehicle on this account yet — use Add vehicle above.
                 </p>
               )}
             </div>
@@ -739,6 +756,20 @@ export function InvoiceForm() {
         onOpenChange={onModalOpenChange}
         onCreated={onCustomerCreated}
       />
+
+      {/* ---- Add a vehicle to the customer already chosen above ---- */}
+      {customerId && (
+        <NewVehicleDialog
+          open={vehicleDialogOpen}
+          onOpenChange={setVehicleDialogOpen}
+          customerId={customerId}
+          customerName={selectedCustomer?.name ?? "this customer"}
+          onCreated={async (vehicle) => {
+            await loadDirectory();
+            setVehicleId(vehicle.id);
+          }}
+        />
+      )}
     </div>
   );
 }

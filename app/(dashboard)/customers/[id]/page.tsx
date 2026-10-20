@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeftIcon, CarIcon } from "lucide-react";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -10,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { AddVehicleButton } from "./add-vehicle-button";
 import { CustomerEditor } from "./customer-editor";
 
 // Session-reading page: renders at request time (blocking, see layout).
@@ -97,12 +99,17 @@ export default async function CustomerDetailPage({
             <CardDescription>
               Open a vehicle to edit it or see its job history.
             </CardDescription>
+            <CardAction>
+              <AddVehicleButton
+                customerId={customer.id}
+                customerName={customer.name}
+              />
+            </CardAction>
           </CardHeader>
           <CardContent className="space-y-2">
             {vehicles.length === 0 && (
               <p className="text-sm text-muted-foreground">
-                No vehicle on this account yet — add one while raising the
-                first invoice.
+                No vehicle on this account yet — add one with the button above.
               </p>
             )}
 

@@ -11,6 +11,7 @@ Working list. Tick things off as they land; keep the reasons short.
 
 - [x] **`/customers`** — list of accounts with search by name or phone; each row opens the customer detail page.
 - [x] **`/customers/[id]`** — inline-editable details card (no `/edit` route) plus a small vehicles card that links into each vehicle.
+- [x] **Add a vehicle to an existing customer** — the vehicles card has an *Add vehicle* dialog that creates only the vehicle (customer fixed by the page); the invoice form offers the same button once a customer is picked, then auto-selects the new vehicle. Duplicate plates are explained instead of swallowed.
 - [x] **`/vehicles`** — search-first: nothing is listed until a query arrives; search covers owner name, plate, VIN, make and model.
 - [x] **`/vehicles/[id]`** — small owner card (hops to the customer) plus inline-editable vehicle details.
 
@@ -18,12 +19,11 @@ Working list. Tick things off as they land; keep the reasons short.
 
 - [x] **`0012_invoice_drop_technician.sql`** — pasted; `invoices.technician_id` is gone.
 - [x] **`0013_invoice_list_detail.sql`** — pasted; invoice-only payments, invoices under RLS, leaked job_orders SELECT dropped.
-- [ ] Paste **`0014_rebuild_job_order_policies.sql`** — until then raising a job order from an invoice fails with `new row violates row-level security policy for table "job_orders"` (the earlier paste left the table with no INSERT policy at all).
+- [x] Paste **`0014_rebuild_job_order_policies.sql`** — applied; raising a job order from an invoice works again.
 
 ## Carried over / open
 
 - **VIN** — `vehicles.vin` already exists (0001) and is searched/edited today; decide whether to surface it on the invoice form and in the vehicle cards.
-- Adding a vehicle to an *existing* customer has no UI yet (`NewCustomerDialog` always creates a customer too).
 - `job_orders_tech_view` verified after 0014: technicians still see every job's execution fields and still get zero rows (and zero updates) on `job_orders` itself.
 - Repair `scripts/rls-test-suite.mjs` and get it green (0010 on disk matches the applied columns).
 - Role/privilege matrix redefinition (BUSINESS_RULES §8) — OPEN.

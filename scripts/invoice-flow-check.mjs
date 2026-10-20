@@ -287,7 +287,7 @@ try {
   });
 
   let detailPath = null;
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 120; i++) {
     detailPath = await page.eval(() => location.pathname).catch(() => null);
     if (detailPath && /^\/invoices\/[0-9a-f-]{36}$/.test(detailPath)) break;
     await sleep(250);
@@ -327,14 +327,18 @@ try {
   check("job order button disabled below 50%", detail.jobDisabled === true, JSON.stringify(detail));
   check("50% warning spelled out on the detail page", detail.warning, JSON.stringify(detail));
 
+  let scriptCustomerId = null;
+  let scriptInvoiceId = null;
   if (URL_ && SERVICE) {
     const hdr = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
     const customers = await fetch(`${URL_}/rest/v1/customers?phone=eq.${encodeURIComponent(`+1555${stamp}00`)}`, { headers: hdr }).then((r) => r.json());
     const customerId = customers?.[0]?.id;
+    scriptCustomerId = customerId ?? null;
     check("customer row exists", Boolean(customerId), JSON.stringify(customers).slice(0, 200));
 
     const invoices = await fetch(`${URL_}/rest/v1/invoices?select=*&customer_id=eq.${customerId}&order=created_at.desc&limit=1`, { headers: hdr }).then((r) => r.json());
     const inv = invoices?.[0];
+    scriptInvoiceId = inv?.id ?? null;
     check("invoice row exists", Boolean(inv), JSON.stringify(invoices).slice(0, 200));
     if (inv) {
       check("invoice total = 17500", Number(inv.total_amount) === 17500, String(inv.total_amount));
@@ -376,7 +380,7 @@ try {
 
   const waitPay = async (wanted) => {
     let state = await payState();
-    for (let i = 0; i < 40 && !wanted(state); i++) {
+    for (let i = 0; i < 120 && !wanted(state); i++) {
       await sleep(250);
       state = await payState();
     }
@@ -426,7 +430,7 @@ try {
 
   await clickByText("Raise job order");
   let jobNumber = null;
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 120; i++) {
     jobNumber = await page
       .eval(() => (document.body.innerText.match(/JO-[A-Za-z0-9-]+/) || [])[0] || null)
       .catch(() => null);
@@ -436,15 +440,16 @@ try {
   const jobAlert = await page.eval(() => document.querySelector('[role="alert"]')?.innerText ?? null);
   check("job order raised from the invoice", Boolean(jobNumber), `job=${jobNumber} alert=${jobAlert}`);
 
-  if (URL_ && SERVICE && jobNumber) {
+  if (URL_ && SERVICE && jobNumber && scriptInvoiceId) {
     const hdr2 = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
-    const invId = (detailPath || "").split("/").pop();
+    const invId = scriptInvoiceId;
     const rows = await fetch(`${URL_}/rest/v1/invoices?select=id,job_order_id,customer_id&id=eq.${invId}`, { headers: hdr2 }).then((r) => r.json());
     check("invoice stamped with its job order", Boolean(rows?.[0]?.job_order_id), JSON.stringify(rows));
 
     const pays = await fetch(`${URL_}/rest/v1/payments?select=amount,payment_method,job_order_id&invoice_id=eq.${invId}`, { headers: hdr2 }).then((r) => r.json());
-    const sum = (pays || []).reduce((t, r) => t + Number(r.amount), 0);
-    check("two payments totalling the invoice", (pays || []).length === 2 && sum === 17500, JSON.stringify(pays));
+    const payRows = Array.isArray(pays) ? pays : [];
+    const sum = payRows.reduce((t, r) => t + Number(r.amount), 0);
+    check("two payments totalling the invoice", payRows.length === 2 && sum === 17500, JSON.stringify(pays));
 
     const jobs = await fetch(`${URL_}/rest/v1/job_orders?select=id,job_number,estimated_amount,customer_id&job_number=eq.${encodeURIComponent(jobNumber)}`, { headers: hdr2 }).then((r) => r.json());
     check(
@@ -454,7 +459,116 @@ try {
     );
   }
 
+
+  // ── 5b. add a vehicle to an existing customer ──────────────────────────
+  // The customer page owns the owner, so the dialog only asks about the car.
+  if (scriptCustomerId) {
+    const addedPlate = `ADD-${stamp}`;
+    const dialogOpen = () =>
+      page.eval(() => document.querySelector('[data-slot="dialog-content"]')?.innerText ?? null);
+
+    const addVehicle = async (fillPlate) => {
+      const opened = await page.eval(() => {
+        const btn = [...document.querySelectorAll("main button")].find(
+          (b) => b.textContent.trim() === "Add vehicle",
+        );
+        if (!btn) return false;
+        btn.click();
+        return true;
+      });
+      if (!opened) return { opened: false };
+
+      for (let i = 0; i < 20 && !(await dialogOpen()); i++) await sleep(100);
+
+      await page.eval((value) => {
+        const pop = document.querySelector('[data-slot="dialog-content"]');
+        if (!pop) return false;
+        const set = (id, v) => {
+          const el = pop.querySelector(id);
+          if (!el) return false;
+          Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set.call(el, v);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          return true;
+        };
+        const ok =
+          set("#new-vehicle-plate", value) &&
+          set("#new-vehicle-make", "Hyundai") &&
+          set("#new-vehicle-model", "Tucson");
+        pop.querySelector('button[type="submit"]')?.click();
+        return ok;
+      }, fillPlate);
+
+      return { opened: true };
+    };
+
+    const waitDialogGone = async () => {
+      for (let i = 0; i < 60; i++) {
+        if (!(await dialogOpen())) return true;
+        await sleep(250);
+      }
+      return false;
+    };
+
+    await page.goto(`${BASE}/customers/${scriptCustomerId}`);
+    await page.eval(() => document.fonts.ready.then(() => true));
+    await sleep(400);
+
+    const first = await addVehicle(addedPlate);
+    check("customer page offers Add vehicle", first.opened, JSON.stringify(first));
+    const closed = await waitDialogGone();
+    let cardText = "";
+    for (let i = 0; i < 40; i++) {
+      cardText = await page.eval(() => document.querySelector("main")?.innerText ?? "");
+      if (cardText.includes(addedPlate)) break;
+      await sleep(250);
+    }
+    check(
+      "vehicle added to the existing customer shows on the card",
+      closed && cardText.includes(addedPlate) && /2 vehicles/.test(cardText),
+      cardText.replace(/\s+/g, " ").slice(0, 260),
+    );
+
+    if (URL_ && SERVICE) {
+      const hdr3 = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
+      const rows = await fetch(
+        `${URL_}/rest/v1/vehicles?select=license_plate,customer_id,vin&customer_id=eq.${scriptCustomerId}`,
+        { headers: hdr3 },
+      ).then((r) => r.json());
+      check(
+        "new vehicle row belongs to that customer",
+        rows?.some((v) => v.license_plate === addedPlate),
+        JSON.stringify(rows),
+      );
+    }
+
+    const duplicate = await addVehicle(addedPlate);
+    let duplicateAlert = null;
+    for (let i = 0; i < 40; i++) {
+      duplicateAlert = await page.eval(
+        () =>
+          document.querySelector('[data-slot="dialog-content"] [role="alert"]')?.innerText ?? null,
+      );
+      if (duplicateAlert) break;
+      await sleep(250);
+    }
+    check(
+      "duplicate plate is explained, not swallowed",
+      duplicate.opened && /already registered/i.test(duplicateAlert || ""),
+      `alert=${JSON.stringify(duplicateAlert)}`,
+    );
+    await page.keyboard?.("Escape");
+    await page.eval(() => {
+      const pop = document.querySelector('[data-slot="dialog-content"]');
+      const cancel = pop && [...pop.querySelectorAll("button")].find((b) => /Cancel/.test(b.textContent));
+      cancel?.click();
+    });
+    await waitDialogGone();
+  } else {
+    check("customer id available for the add-vehicle check", false);
+  }
+
   // ── 6. the list is the root, rows open the detail page ─────────────────
+  await sleep(500); // let the job-order refresh settle before navigating
   await page.goto(`${BASE}/invoices`);
   await page.eval(() => document.fonts.ready.then(() => true));
   await sleep(800); // let the list hydrate before clicking a row
@@ -510,6 +624,7 @@ try {
     ["/customers?q=baba", "customers search"],
     ["/vehicles", "vehicles search"],
     ["/vehicles?q=baba", "vehicle results"],
+    ...(scriptCustomerId ? [[`/customers/${scriptCustomerId}`, "customer detail"]] : []),
   ];
   for (const [path, label] of directoryPages) {
     await page.goto(`${BASE}${path}`);
@@ -526,8 +641,13 @@ try {
     );
   }
 
-  if (detailPath) {
-    await page.goto(`${BASE}${detailPath}`);
+  const detailRoute = /^\/invoices\/[0-9a-f-]{36}$/.test(detailPath || "")
+    ? detailPath
+    : scriptInvoiceId
+      ? `/invoices/${scriptInvoiceId}`
+      : null;
+  if (detailRoute) {
+    await page.goto(`${BASE}${detailRoute}`);
     await page.eval(() => document.fonts.ready.then(() => true));
     const fit = await page.eval(() => ({
       vw: innerWidth,

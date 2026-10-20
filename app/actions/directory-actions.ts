@@ -25,6 +25,17 @@ export interface UpdateVehicleInput {
   odometer?: string;
 }
 
+export interface CreateVehicleInput {
+  customerId: string;
+  licensePlate: string;
+  make: string;
+  model: string;
+  year?: string;
+  color?: string;
+  vin?: string;
+  odometer?: string;
+}
+
 const clean = (value: string | undefined) => value?.trim() || "";
 
 function parseYear(raw: string | undefined): number | null {
@@ -138,6 +149,67 @@ export async function updateVehicle(input: UpdateVehicleInput) {
     entityType: "vehicle",
     entityId: data.id,
     details: { license_plate: licensePlate },
+  });
+
+  return data;
+}
+
+/**
+ * Add a vehicle to an existing customer — the customer is fixed by the page
+ * that opens the dialog, so a plate cannot be re-homed by accident.
+ * Officers only (§4); plates are unique across the workshop (0001).
+ */
+export async function createVehicleForCustomer(input: CreateVehicleInput) {
+  const { profile } = await requireRole(["admin", "manager", "reception"]);
+
+  if (!input.customerId) throw new Error("Customer is required");
+  const licensePlate = clean(input.licensePlate).toUpperCase();
+  const make = clean(input.make);
+  const model = clean(input.model);
+  if (!licensePlate) throw new Error("Plate number is required");
+  if (!make) throw new Error("Make is required");
+  if (!model) throw new Error("Model is required");
+
+  const year = parseYear(input.year);
+  const odometer = parseIntOrThrow(input.odometer, "Odometer", 0);
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("vehicles")
+    .insert({
+      customer_id: input.customerId,
+      license_plate: licensePlate,
+      make,
+      model,
+      year,
+      color: clean(input.color) || null,
+      vin: clean(input.vin) || null,
+      odometer,
+    })
+    .select("id, license_plate")
+    .single();
+
+  if (error) {
+    // 23505 = unique_violation: the plate already exists somewhere else.
+    if (error.code === "23505") {
+      throw new Error(
+        `Plate ${licensePlate} is already registered to another vehicle.`,
+      );
+    }
+    throw new Error(error.message);
+  }
+
+  revalidatePath(`/customers/${input.customerId}`);
+  revalidatePath("/customers");
+  revalidatePath("/vehicles");
+
+  await logAudit({
+    userId: profile.id,
+    action: "vehicle.created",
+    entityType: "vehicle",
+    entityId: data.id,
+    details: { license_plate: licensePlate, customer_id: input.customerId },
   });
 
   return data;
