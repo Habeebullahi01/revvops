@@ -1,23 +1,19 @@
 "use client";
 
-import Link from "next/link";
 import { PrinterIcon } from "lucide-react";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "cn";
+import { Button } from "@/components/ui/button";
 
 /**
- * Opens the dedicated card route. The job card is a separate sheet — no
- * money, no timeline, a QR to this page — so it is not this page printed, and
- * following a link is what keeps the two layouts independent.
+ * Prints the job card. The card itself is already on this page, hidden on
+ * screen and revealed by `@media print` (see the `job-card` block in
+ * `globals.css`), so this is a bare `window.print()` — no navigation to a
+ * separate sheet route.
  */
-export function PrintButton({ jobOrderId }: { jobOrderId: string }) {
+export function PrintButton() {
   return (
-    <Link
-      href={`/job-orders/${jobOrderId}/card`}
-      className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-    >
+    <Button type="button" variant="outline" size="sm" onClick={() => window.print()}>
       <PrinterIcon className="size-3.5" />
       Print job card
-    </Link>
+    </Button>
   );
 }

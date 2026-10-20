@@ -1,10 +1,11 @@
-// Job card check — verifies the printable sheet that goes inside the vehicle
-// at `/job-orders/[id]/card`:
-//   1. it renders for a seeded job order and is reachable from the detail page
-//   2. it shows owner name/phone, vehicle details and the invoice's work items
+// Job card check — verifies the printable sheet that goes inside the vehicle.
+// The card is rendered on the job order detail page, hidden on screen and
+// revealed by `@media print`, so printing needs no extra navigation:
+//   1. the detail page hosts the card and a print button, with no card route
+//   2. the card shows owner name/phone, vehicle details and the work items
 //   3. it carries no money and no technician timeline / internal commentary
-//   4. the QR renders, decodes to this job order's absolute URL
-//   5. the print stylesheet applies (A4 @page, shell hidden, card unframed)
+//   4. the QR renders and decodes to this job order's absolute URL
+//   5. emulated print media reveals the card and hides the whole screen UI
 //   6. nothing overflows horizontally at 390px
 //
 //   node --env-file=.env.local scripts/job-card-check.mjs
@@ -198,21 +199,66 @@ try {
     await sleep(250);
   }
 
-  // ── the detail page links to the card ──────────────────────────────────
+  // ── the detail page hosts the print flow (no separate card route) ──────
   await page.goto(`${BASE}/job-orders/${job.id}`);
-  const cardHref = await page.eval(() => {
-    const a = [...document.querySelectorAll("a")].find((x) => x.href.includes("/card"));
-    return a ? a.getAttribute("href") : null;
+  const detail = await page.eval(() => {
+    const btn = [...document.querySelectorAll("button")].find((b) =>
+      /print job card/i.test(b.textContent || ""),
+    );
+    const strayLink = [...document.querySelectorAll('a[href*="/card"]')].length;
+    const card = document.querySelector(".job-card");
+    const hidden = card ? getComputedStyle(card.parentElement).display === "none" : null;
+    return { hasButton: !!btn, strayCardLinks: strayLink, hasCard: !!card, cardHiddenOnScreen: hidden };
   });
-  check("detail page links to the card route", cardHref === `/job-orders/${job.id}/card`, String(cardHref));
+  check("detail page has a print button", detail.hasButton === true);
+  check("no navigation to a separate card route remains", detail.strayCardLinks === 0, `${detail.strayCardLinks} link(s)`);
+  check("the card is rendered on the detail page", detail.hasCard === true);
+  check("the card is hidden on screen", detail.cardHiddenOnScreen === true, String(detail.cardHiddenOnScreen));
 
-  // ── render the card ────────────────────────────────────────────────────
-  await page.goto(`${BASE}/job-orders/${job.id}/card`);
+  // ── emulate print media: the card alone must be visible ────────────────
+  await page.send("Emulation.setEmulatedMedia", { media: "print" });
+  await sleep(500);
+  const printed = await page.eval(() => {
+    const visible = (el) => {
+      if (!el) return false;
+      const s = getComputedStyle(el);
+      if (s.display === "none" || s.visibility === "hidden") return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+    const card = document.querySelector(".job-card");
+    const cardShown = visible(card);
+    // Screen-only surfaces that must NOT reach paper.
+    const screenWrapper = card ? card.parentElement.previousElementSibling : null;
+    const screenShown = visible(screenWrapper);
+    const aside = document.querySelector("aside");
+    const header = document.querySelector("header");
+    return {
+      cardShown,
+      screenShown,
+      asideShown: visible(aside),
+      headerShown: visible(header),
+      docText: document.body.innerText,
+    };
+  });
+  check("print media reveals the card", printed.cardShown === true);
+  check("print media hides the screen UI", printed.screenShown === false, String(printed.screenShown));
+  check("print media hides the sidebar", printed.asideShown === false, String(printed.asideShown));
+  check("print media hides the header", printed.headerShown === false, String(printed.headerShown));
+
+  // Even with everything on screen, paper must carry no money or internals.
+  check("printed output has no naira symbol", !printed.docText.includes("\u20a6"));
+  check("printed output has no cost figures", !/\d{1,3}(,\d{3})(\.\d+)?/.test(printed.docText));
+  check("printed output has no internal note", !printed.docText.includes(SECRET));
+  await page.send("Emulation.setEmulatedMedia", { media: "" });
+  await sleep(300);
+
+  // ── the card's own content ─────────────────────────────────────────────
   const card = await page.eval(() => {
     const el = document.querySelector(".job-card");
     return el ? el.innerText : null;
   });
-  check("card route renders the sheet", typeof card === "string" && card.length > 0, String(card).slice(0, 80));
+  check("card renders the sheet", typeof card === "string" && card.length > 0, String(card).slice(0, 80));
   if (typeof card !== "string") throw new Error("no card to inspect");
 
   check("shows the job number", card.includes(job.job_number), job.job_number);
@@ -287,7 +333,9 @@ try {
   check("QR decodes to the job order url", decoded === expectedUrl, String(decoded));
 
   // The page's own URL string is printed beside the code, for humans.
-  const shownUrl = await page.eval(() => document.body.innerText.includes(`${location.origin}/job-orders/`));
+  const shownUrl = await page.eval(() =>
+    Boolean(document.querySelector(".job-card")?.textContent?.includes(`${location.origin}/job-orders/`)),
+  );
   check("card prints the plain url too", shownUrl === true);
 
   // ── print stylesheet ───────────────────────────────────────────────────

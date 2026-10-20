@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
+import QRCode from "qrcode";
 import { ArrowLeftIcon, ReceiptTextIcon } from "lucide-react";
 import {
   Card,
@@ -15,6 +17,7 @@ import { formatNaira } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { AssignmentControl } from "./assignment-control";
+import { JobCard, type CardCostLine } from "./job-card";
 import { JobFactsCard } from "./job-facts";
 import { JobTimeline, type TimelineEntry } from "./job-timeline";
 import { PrintButton } from "./print-button";
@@ -51,6 +54,8 @@ interface JobDetail {
     make: string | null;
     model: string | null;
     year: number | null;
+    vin: string | null;
+    color: string | null;
   } | null;
 }
 
@@ -58,6 +63,7 @@ interface InvoiceSummary {
   id: string;
   total_amount: string;
   created_at: string;
+  cost_breakdown: CardCostLine[] | null;
 }
 
 const shortDate = (value: string | null) =>
@@ -87,7 +93,7 @@ export default async function JobOrderDetailPage({
       date_in, expected_date_out, actual_date_out, estimated_amount, actual_amount,
       notes, created_at, created_by, assigned_technician_id,
       customer:customer_id ( id, name, phone, email ),
-      vehicle:vehicle_id ( id, license_plate, make, model, year )
+      vehicle:vehicle_id ( id, license_plate, make, model, year, vin, color )
     `,
     )
     .eq("id", id)
@@ -109,7 +115,7 @@ export default async function JobOrderDetailPage({
       .order("created_at", { ascending: false }),
     supabase
       .from("invoices")
-      .select("id, total_amount, created_at")
+      .select("id, total_amount, created_at, cost_breakdown")
       .eq("job_order_id", job.id)
       .maybeSingle(),
     supabase.from("profiles").select("id, full_name"),
@@ -208,16 +214,40 @@ export default async function JobOrderDetailPage({
   const estimate =
     job.actual_amount ?? job.estimated_amount ?? null;
 
+  // The job card rides on this page, hidden on screen and revealed by
+  // `@media print`, so printing costs no navigation. It needs the invoice's
+  // line descriptions (words only — never the amounts) and a QR that points
+  // back here. A URL is only useful to a phone if it is absolute, and the app
+  // does not know its public origin at build time, so it comes from the
+  // request's own host.
+  const cardLines: CardCostLine[] = (invoice?.cost_breakdown ?? []).filter(
+    (line) => line && typeof line === "object" && line.description,
+  );
+  const host = (await headers()).get("host") ?? "localhost:3000";
+  const proto = host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https";
+  const jobUrl = `${proto}://${host}/job-orders/${job.id}`;
+  const qrSvg = await QRCode.toString(jobUrl, {
+    type: "svg",
+    margin: 0,
+    errorCorrectionLevel: "M",
+  });
+
   return (
-    <div className="space-y-4">
-      <div className="space-y-1.5">
-        <Link
-          href="/job-orders"
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground print:hidden"
-        >
-          <ArrowLeftIcon className="size-3.5" />
-          All job orders
-        </Link>
+    <>
+      {/*
+       * Everything on screen is hidden on paper; the card below is the only
+       * printed artefact. Wrapping the whole screen UI (rather than hiding
+       * piece by piece) means a future section cannot leak onto the card.
+       */}
+      <div className="space-y-4 print:hidden">
+        <div className="space-y-1.5">
+          <Link
+            href="/job-orders"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeftIcon className="size-3.5" />
+            All job orders
+          </Link>
 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
@@ -257,7 +287,7 @@ export default async function JobOrderDetailPage({
                 Vehicle
               </Link>
             )}
-            <PrintButton jobOrderId={job.id} />
+            <PrintButton />
           </div>
         </div>
       </div>
@@ -284,15 +314,15 @@ export default async function JobOrderDetailPage({
 
           {/*
            * The timeline is staff-only. The paper artefact is the job card
-           * (`/job-orders/[id]/card`), which deliberately carries no timeline;
-           * printing this page must not smuggle one out on paper.
+           * below, which deliberately carries no timeline; printing this page
+           * must not smuggle one out on paper.
            */}
-          <div className="print:hidden">
+          <div>
             <JobTimeline entries={timeline} />
           </div>
         </div>
 
-        <div className="space-y-4 print:hidden">
+        <div className="space-y-4">
           <StatusControl
             jobOrderId={job.id}
             status={job.execution_status}
@@ -374,6 +404,32 @@ export default async function JobOrderDetailPage({
           </Card>
         </div>
       </div>
-    </div>
+      </div>
+
+      {/*
+       * The job card. Hidden on screen — it is paper, not a screen surface —
+       * and revealed by the `@media print` rules in globals.css. Printing it
+       * from here is one button press and no navigation.
+       */}
+      <div className="hidden print:block">
+        <JobCard
+          job={{
+            id: job.id,
+            job_number: job.job_number,
+            execution_status: job.execution_status,
+            billing_type: job.billing_type,
+            complaint: job.complaint,
+            date_in: job.date_in,
+            expected_date_out: job.expected_date_out,
+            notes: job.notes,
+            customer: job.customer,
+            vehicle: job.vehicle,
+          }}
+          lines={cardLines}
+          jobUrl={jobUrl}
+          qrSvg={qrSvg}
+        />
+      </div>
+    </>
   );
 }

@@ -264,10 +264,14 @@
       display: none !important;
     }
 
-    /* Unframe the sheet: no inset, radius or edge on paper. */
+    /*
+     * Unframe the sheet: no inset, radius or edge on paper. Display is left
+     * alone on purpose — forcing `display: block !important` here would
+     * override the `print:hidden` utility on the job order's screen wrapper
+     * and print the whole page behind the card.
+     */
     body > div,
     main {
-      display: block !important;
       height: auto !important;
       overflow: visible !important;
       border: 0 !important;

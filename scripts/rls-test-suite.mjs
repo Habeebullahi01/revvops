@@ -330,7 +330,10 @@ async function main() {
   const R = "reception";
 
   r = await rest(tok.reception, "GET", "payments?select=id");
-  check(R, "R01 CAN view payments", r.status === 200 && r.data.length === 1, `got ${r.data?.length}`);
+  // Exact row counts are a trap: any other test that records a payment
+  // changes them (same reason R02 and M01 were loosened). What R01 means is
+  // that reception can read payments at all, and sees rows.
+  check(R, "R01 CAN view payments", r.status === 200 && r.data.length > 0, `got ${r.data?.length}`);
 
   r = await rest(tok.reception, "GET", "job_orders?select=id,estimated_amount");
   check(R, "R02 CAN view jobs incl. financial columns",
