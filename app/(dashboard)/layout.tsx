@@ -15,8 +15,23 @@ export const instant = false;
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", roles: ["admin", "manager"] },
   {
+    href: "/invoices",
+    label: "Invoices",
+    roles: ["admin", "manager", "reception"],
+  },
+  {
     href: "/job-orders",
     label: "Job Orders",
+    roles: ["admin", "manager", "reception"],
+  },
+  {
+    href: "/customers",
+    label: "Customers",
+    roles: ["admin", "manager", "reception"],
+  },
+  {
+    href: "/vehicles",
+    label: "Vehicles",
     roles: ["admin", "manager", "reception"],
   },
   { href: "/technician", label: "My Jobs", roles: ["technician"] },

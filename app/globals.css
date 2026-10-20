@@ -54,6 +54,10 @@
 
   /* sheet tokens exposed as utilities */
   --color-rule: var(--rule);
+  --color-brand: var(--brand);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-warning: var(--warning);
   --color-status-pending: var(--status-pending);
   --color-status-in-progress: var(--status-in-progress);
   --color-status-waiting-parts: var(--status-waiting-parts);
