@@ -78,7 +78,20 @@ let originalJob1Exec = "pending";
 let originalCounter = 0;
 
 function idOf(d) {
-  return Array.isArray(d) && d[0]?.id ? d[0].id : null;
+  if (Array.isArray(d)) return d[0]?.id ?? null;
+  return d?.id ?? null;
+}
+
+/** Seed a row and fail loudly: a silent null id only surfaces much later. */
+async function seedOne(table, body) {
+  const res = await svc.post(table, body);
+  const id = idOf(res.data);
+  if (!id) {
+    throw new Error(
+      `seed ${table} failed (${res.status}): ${JSON.stringify(res.data).slice(0, 200)}`,
+    );
+  }
+  return id;
 }
 
 async function getUserId(email) {
@@ -109,48 +122,47 @@ async function main() {
   };
 
   // ---- seed fixture ----
-  created.customers.push(idOf((await svc.post("customers", { name: "RLS Fixture Customer", phone: "+10000000000" })).data));
-  const customerId = created.customers[0];
-  created.vehicles.push(idOf((await svc.post("vehicles", { customer_id: customerId, make: "Test", model: "Fixture", year: 2024, license_plate: "RLS-FIXTURE-1" })).data));
-  const vehicleId = created.vehicles[0];
+  const customerId = await seedOne("customers", { name: "RLS Fixture Customer", phone: "+10000000000" });
+  created.customers.push(customerId);
+  const vehicleId = await seedOne("vehicles", { customer_id: customerId, make: "Test", model: "Fixture", year: 2024, license_plate: "RLS-FIXTURE-1" });
+  created.vehicles.push(vehicleId);
 
-  const job1 = await svc.post("job_orders", {
+  const job1Id = await seedOne("job_orders", {
     job_number: "JO-FIXTURE-0001", customer_id: customerId, vehicle_id: vehicleId,
     billing_type: "upfront", execution_status: "pending", complaint: "Fixture job assigned to technician",
     estimated_amount: 100, assigned_technician_id: ids.technician, created_by: ids.admin,
   });
   // Created part-paid: officers may open a job order with partial or no
   // payment (BUSINESS_RULES.md §3.2).
-  const job2 = await svc.post("job_orders", {
+  const job2Id = await seedOne("job_orders", {
     job_number: "JO-FIXTURE-0002", customer_id: customerId, vehicle_id: vehicleId,
     billing_type: "post_service", execution_status: "pending", financial_status: "part_paid",
     complaint: "Fixture job with payment",
     estimated_amount: 500, assigned_technician_id: null, created_by: ids.admin,
   });
-  created.job_orders.push(idOf(job1.data), idOf(job2.data));
-  const [job1Id, job2Id] = created.job_orders;
-  originalJob1Exec = job1.data[0].execution_status;
+  created.job_orders.push(job1Id, job2Id);
+  originalJob1Exec = "pending";
 
-  created.job_order_items.push(idOf((await svc.post("job_order_items", {
+  created.job_order_items.push(await seedOne("job_order_items", {
     job_order_id: job1Id, description: "Fixture labor", item_type: "labor",
     quantity: 1, unit_price: 100, total_price: 100,
-  })).data));
+  }));
 
-  created.payments.push(idOf((await svc.post("payments", {
+  const paymentId = await seedOne("payments", {
     job_order_id: job2Id, amount: 50, payment_method: "cash", received_by: ids.admin,
-  })).data));
-  const paymentId = created.payments[0];
+  });
+  created.payments.push(paymentId);
 
-  created.receipts.push(idOf((await svc.post("receipts", {
+  const fixtureReceiptId = await seedOne("receipts", {
     receipt_number: "RCP-FIXTURE-0001", payment_id: paymentId, job_order_id: job2Id,
     amount: 50, printed_by: ids.admin, is_duplicate: false,
-  })).data));
-  const fixtureReceiptId = created.receipts[0];
+  });
+  created.receipts.push(fixtureReceiptId);
 
-  created.audit_logs.push(idOf((await svc.post("audit_logs", {
+  created.audit_logs.push(await seedOne("audit_logs", {
     user_id: ids.admin, action: "test.seed", entity_type: "job_order",
     entity_id: job1Id, details: { test: "rls-suite" },
-  })).data));
+  }));
 
   const counterBefore = (await svc.get("document_sequences?document_type=eq.job_order&year=eq." + YEAR)).data?.[0]?.last_number ?? 0;
   originalCounter = counterBefore;
@@ -204,11 +216,43 @@ async function main() {
   r = await rest(tok.technician, "POST", "job_logs", { job_order_id: job1Id, technician_id: ids.manager, execution_status: "completed", notes: "rls-suite spoof" }, "return=representation");
   check(G, "T12 cannot insert job log under ANOTHER technician's ID", r.status >= 400, `status ${r.status}`);
 
+  // Owner decision 2026-10-19 (migration 0014, BUSINESS_RULES.md §4): any
+  // signed-in user may RAISE a job order; the technician constraint is that
+  // they can never read or update one.
+  //
+  // Deliberately NO `return=representation` here. Asking for the row back
+  // makes PostgREST re-read the new row, which evaluates the SELECT policy
+  // ("Staff see all jobs", officers only) and denies the insert with 42501
+  // even though the INSERT policy is satisfied. That is an artefact of
+  // asserting the two rules through one API door, not a data-access rule —
+  // the read-back denial is asserted separately below.
+  const techJobRow = {
+    job_number: `JO-TECH-${Date.now()}`, customer_id: customerId, vehicle_id: vehicleId,
+    billing_type: "upfront", complaint: "created by a technician", created_by: ids.technician,
+  };
+  r = await rest(tok.technician, "POST", "job_orders", techJobRow);
+  check(G, "T13 CAN create a job order (owner decision 0014)", r.status === 201, `status ${r.status}`);
+
+  // Find the row by job number (the technician cannot read it back, so the
+  // service role looks it up for the rest of this block).
+  const techJobId = idOf((await svc.get(`job_orders?select=id&job_number=eq.${techJobRow.job_number}`)).data);
+  if (techJobId) created.job_orders.push(techJobId);
+
+  r = await rest(tok.technician, "GET", `job_orders?select=id&id=eq.${techJobId}`);
+  check(G, "T13b cannot READ the job order it just created", r.status === 200 && r.data?.length === 0, `status ${r.status}, rows ${r.data?.length ?? "?"}`);
+
+  r = await rest(tok.technician, "PATCH", `job_orders?id=eq.${techJobId}`, { estimated_amount: 1 }, "return=representation");
+  check(G, "T13c cannot UPDATE the job order it just created", r.status === 200 && r.data?.length === 0, `status ${r.status}, rows ${r.data?.length ?? "?"}`);
+
+  // The read-back artefact itself, pinned so nobody "fixes" it by widening
+  // the SELECT policy: a technician asking for the row back is denied.
   r = await rest(tok.technician, "POST", "job_orders", {
-    job_number: "JO-HACK-0001", customer_id: customerId, vehicle_id: vehicleId,
-    billing_type: "upfront", complaint: "hack", created_by: ids.technician,
-  });
-  check(G, "T13 cannot create job orders", r.status >= 400, `status ${r.status}`);
+    job_number: `JO-TECH-RB-${Date.now()}`, customer_id: customerId, vehicle_id: vehicleId,
+    billing_type: "upfront", complaint: "created by a technician", created_by: ids.technician,
+  }, "return=representation");
+  check(G, "T13d create+read-back denied by the SELECT policy", r.status === 403, `status ${r.status}`);
+  const readBackId = idOf((await svc.get(`job_orders?select=id&job_number=eq.${r.data?.job_number ?? "none"}`)).data);
+  if (readBackId) created.job_orders.push(readBackId);
 
   r = await rest(tok.technician, "PATCH", `job_orders?id=eq.${job1Id}`, { estimated_amount: 99999 }, "return=representation");
   check(G, "T14 cannot update job orders (0 rows)", r.status === 200 && r.data?.length === 0, `status ${r.status}, rows ${r.data?.length ?? "?"}`);
@@ -289,7 +333,9 @@ async function main() {
   check(R, "R01 CAN view payments", r.status === 200 && r.data.length === 1, `got ${r.data?.length}`);
 
   r = await rest(tok.reception, "GET", "job_orders?select=id,estimated_amount");
-  check(R, "R02 CAN view jobs incl. financial columns", r.status === 200 && r.data.length === 2, `got ${r.data?.length}`);
+  check(R, "R02 CAN view jobs incl. financial columns",
+    r.status === 200 && r.data?.some((j) => j.id === job1Id) && "estimated_amount" in (r.data?.[0] ?? {}),
+    `got ${r.data?.length}`);
 
   r = await rest(tok.reception, "PATCH", `job_orders?id=eq.${job1Id}`, { estimated_amount: 120 }, "return=representation");
   check(R, "R03 CAN edit job orders", r.status === 200 && r.data?.length === 1, `status ${r.status}`);
@@ -328,7 +374,9 @@ async function main() {
   const M = "manager";
 
   r = await rest(tok.manager, "GET", "audit_logs?select=id");
-  check(M, "M01 CAN view audit logs", r.status === 200 && r.data.length === 1, `got ${r.data?.length}`);
+  check(M, "M01 CAN view audit logs",
+    r.status === 200 && r.data?.some((row) => row.id === created.audit_logs[0]),
+    `got ${r.data?.length}`);
 
   r = await rest(tok.manager, "POST", "receipts", {
     receipt_number: `RCP-FIXTURE-MDUP-${Date.now()}`, payment_id: paymentId, job_order_id: job2Id,

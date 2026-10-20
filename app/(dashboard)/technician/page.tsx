@@ -2,7 +2,6 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -13,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { logExecutionStatus, type ExecutionStatus } from "@/app/actions/job-actions";
+import { StatusPill, executionStatusLabel } from "@/components/status-pill";
 
 interface JobOrder {
   id: string;
@@ -62,21 +62,6 @@ const NEXT_STATUSES: Record<string, ExecutionStatus[]> = {
   cancelled: [],
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: "Pending",
-  in_progress: "In progress",
-  waiting_parts: "Waiting parts",
-  completed: "Completed",
-  cancelled: "Cancelled",
-};
-
-const STATUS_CLASS: Record<string, string> = {
-  pending: "bg-status-pending/15 text-status-pending",
-  in_progress: "bg-status-in-progress/15 text-status-in-progress",
-  waiting_parts: "bg-status-waiting-parts/15 text-status-waiting-parts",
-  completed: "bg-status-completed/15 text-status-completed",
-  cancelled: "bg-status-cancelled/15 text-status-cancelled",
-};
 
 export default function TechnicianVehicleLensPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -307,15 +292,7 @@ export default function TechnicianVehicleLensPage() {
                             {job.job_number}
                           </td>
                           <td className="px-3 py-2">
-                            <Badge
-                              className={
-                                STATUS_CLASS[job.execution_status] ??
-                                "bg-status-pending/15 text-status-pending"
-                              }
-                            >
-                              {STATUS_LABEL[job.execution_status] ??
-                                job.execution_status.replace("_", " ")}
-                            </Badge>
+                            <StatusPill status={job.execution_status} />
                           </td>
                           <td className="max-w-xs truncate px-3 py-2">
                             {job.complaint}
@@ -367,7 +344,7 @@ export default function TechnicianVehicleLensPage() {
                                     >
                                       {options.map((option) => (
                                         <option key={option} value={option}>
-                                          {STATUS_LABEL[option]}
+                                          {executionStatusLabel(option)}
                                         </option>
                                       ))}
                                     </select>
