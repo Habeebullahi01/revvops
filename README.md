@@ -32,6 +32,7 @@ shadcn/ui · Supabase (Postgres, RLS, Auth)
 | `node --env-file=.env.local scripts/db-health-check.mjs` | DB + RLS health probe |
 | `node --env-file=.env.local scripts/rls-test-suite.mjs` | PRD §13 access-control suite — must exit 0 |
 | `CHROME_PATH=<chrome> node --env-file=.env.local scripts/design-preview.mjs --who admin` | per-role screenshots + numeric design gate |
+| `CHROME_PATH=<chrome> node --env-file=.env.local scripts/invoice-flow-check.mjs` | invoice → payment → job-order end-to-end gate; deletes its own test rows (`--purge` clears older runs, `KEEP_TEST_DATA=1` keeps them) |
 
 ## Layout
 

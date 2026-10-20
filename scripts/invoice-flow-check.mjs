@@ -9,6 +9,12 @@
 //
 //   node --env-file=.env.local scripts/invoice-flow-check.mjs
 //
+// The run deletes its own customer/vehicle/invoice/payment/job-order rows
+// when it finishes (KEEP_TEST_DATA=1 keeps them for debugging). Rows left by
+// older runs can be cleared once with:
+//
+//   node --env-file=.env.local scripts/invoice-flow-check.mjs --purge
+//
 // Prints PASS/FAIL lines and exits non-zero on any FAIL.
 import { Browser, sleep } from "../.agents/skills/design-taste-frontend/scripts/lib/cdp.mjs";
 
@@ -24,11 +30,110 @@ const WIDTHS = [
   { slug: "phone", width: 390, height: 844 },
 ];
 
+const stamp = String(Date.now()).slice(-6);
+const PURGE_ONLY = process.argv.includes("--purge");
+const KEEP_DATA = process.env.KEEP_TEST_DATA === "1";
+
 let failures = 0;
 const check = (name, ok, detail = "") => {
   if (!ok) failures++;
   console.log(`${ok ? "PASS  " : "FAIL  "}${name}${!ok && detail ? ` — ${detail}` : ""}`);
 };
+
+// ---- test-data housekeeping (service role; RLS is bypassed on purpose) ----
+const adminHeaders = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
+
+const restGet = (path) => fetch(`${URL_}/rest/v1/${path}`, { headers: adminHeaders }).then((r) => r.json());
+
+const restDelete = async (table, filter) => {
+  const res = await fetch(`${URL_}/rest/v1/${table}?${filter}`, {
+    method: "DELETE",
+    headers: { ...adminHeaders, Prefer: "return=minimal" },
+  });
+  if (!res.ok) {
+    const body = String(await res.text()).slice(0, 140);
+    console.log(`      could not clear ${table}: ${res.status} ${body}`);
+  }
+  return res.ok;
+};
+
+const idList = (ids) => `(${ids.map((id) => `"${id}"`).join(",")})`;
+
+/**
+ * Delete everything belonging to the given customers, children first:
+ * receipts → payments → invoices → job orders → vehicles → customer → audit.
+ * Vehicles/invoices cascade from the customer, but job orders reference the
+ * customer without a cascade, so they go before it.
+ */
+async function purgeCustomers(customers) {
+  const ids = (customers || []).map((c) => c.id);
+  if (!ids.length || !URL_ || !SERVICE) return null;
+
+  const vehicles = await restGet(`vehicles?select=id&customer_id=in.${idList(ids)}`);
+  const invoices = await restGet(`invoices?select=id&customer_id=in.${idList(ids)}`);
+  const jobs = await restGet(`job_orders?select=id&customer_id=in.${idList(ids)}`);
+  const vehicleIds = (vehicles || []).map((v) => v.id);
+  const invoiceIds = (invoices || []).map((i) => i.id);
+  const jobIds = (jobs || []).map((j) => j.id);
+
+  const paymentFilter = [
+    invoiceIds.length ? `invoice_id.in.${idList(invoiceIds)}` : null,
+    jobIds.length ? `job_order_id.in.${idList(jobIds)}` : null,
+  ].filter(Boolean);
+
+  if (paymentFilter.length) {
+    const filter = `or=(${paymentFilter.join(",")})`;
+    const pays = await restGet(`payments?select=id&${filter}`);
+    const payIds = (pays || []).map((p) => p.id);
+    if (payIds.length) await restDelete("receipts", `payment_id=in.${idList(payIds)}`);
+    await restDelete("payments", filter);
+  }
+
+  if (invoiceIds.length) await restDelete("invoices", `customer_id=in.${idList(ids)}`);
+  if (jobIds.length) {
+    // No cascade from a job order into service history.
+    await restDelete("service_history", `linked_job_order_id=in.${idList(jobIds)}`);
+    await restDelete("job_orders", `customer_id=in.${idList(ids)}`);
+  }
+  if (vehicleIds.length) await restDelete("vehicles", `customer_id=in.${idList(ids)}`);
+  await restDelete("customers", `id=in.${idList(ids)}`);
+
+  const auditIds = [...ids, ...invoiceIds, ...jobIds, ...vehicleIds];
+  if (auditIds.length) await restDelete("audit_logs", `entity_id=in.${idList(auditIds)}`);
+  for (const id of ids) {
+    await restDelete("audit_logs", `details->>customer_id=eq.${id}`);
+  }
+
+  return {
+    customers: ids.length,
+    vehicles: vehicleIds.length,
+    invoices: invoiceIds.length,
+    jobs: jobIds.length,
+  };
+}
+
+const testCustomers = async (filter) => {
+  const rows = await restGet(`customers?select=id,name,phone&${filter}`);
+  return Array.isArray(rows) ? rows : [];
+};
+
+// ---- --purge: clear rows left by earlier runs, then stop -----------------
+if (PURGE_ONLY) {
+  if (!URL_ || !SERVICE) {
+    console.log("NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing — cannot purge.");
+    process.exit(1);
+  }
+  const byName = await testCustomers(`name=like.${encodeURIComponent("Check Customer*")}`);
+  const byPhone = await testCustomers(`phone=like.${encodeURIComponent("*1555*")}`);
+  const merged = [...new Map([...byName, ...byPhone].map((c) => [c.id, c])).values()];
+  const removed = await purgeCustomers(merged);
+  console.log(
+    removed
+      ? `Purged ${removed.customers} test customer(s): ${removed.vehicles} vehicles, ${removed.invoices} invoices, ${removed.jobs} job orders.`
+      : "No test customers to purge.",
+  );
+  process.exit(0);
+}
 
 const browser = await Browser.launch();
 const page = await browser.newPage({ width: WIDTHS[0].width, height: WIDTHS[0].height });
@@ -157,7 +262,6 @@ try {
   await page.goto(`${BASE}/invoices/new`);
   await page.eval(() => document.fonts.ready.then(() => true));
 
-  const stamp = String(Date.now()).slice(-6);
   const plate = `TS-${stamp}`;
 
   await clickByText("New customer");
@@ -663,6 +767,23 @@ try {
   check("script completed", false, String(error).slice(0, 300));
 } finally {
   await browser.close().catch(() => {});
+
+  if (KEEP_DATA) {
+    console.log(`\nKEEP_TEST_DATA=1 — left this run's rows in place (phone +1555${stamp}00).`);
+  } else if (URL_ && SERVICE) {
+    const customers = await testCustomers(`phone=eq.${encodeURIComponent(`+1555${stamp}00`)}`).catch(
+      () => [],
+    );
+    const removed = await purgeCustomers(customers).catch((error) => {
+      console.log(`      cleanup failed: ${String(error).slice(0, 160)}`);
+      return null;
+    });
+    if (removed) {
+      console.log(
+        `\nCleaned up ${removed.customers} test customer(s), ${removed.vehicles} vehicle(s), ${removed.invoices} invoice(s), ${removed.jobs} job order(s).`,
+      );
+    }
+  }
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
