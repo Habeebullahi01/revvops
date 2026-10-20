@@ -29,3 +29,20 @@ Working list. Tick things off as they land; keep the reasons short.
 - Role/privilege matrix redefinition (BUSINESS_RULES §8) — OPEN.
 - Invoice state machine: draft/issued — OPEN (schema has no `status` column today).
 - Receipts: one per payment, reprint must not duplicate (Phase 2).
+
+## Phase 2 — job orders and receipts
+
+- [x] **`/job-orders` is a real list** — search over job number, complaint, customer name, plate, make and model; status + payment filter chips; rows open `/job-orders/[id]`.
+- [x] **`/job-orders/[id]` hub** — job facts (inline-editable by officers, incl. `actual_amount` / `actual_date_out`), officer status control (cancelled is terminal), assignment control, merged work timeline (job logs + officer status changes + the "raised" moment), money summary, print button.
+- [x] **Officer actions** — `updateJobOrderExecutionStatus`, `assignJobOrder`, `updateJobOrder`; all officers-only and audited; officer status moves are audited, never written as job-log rows.
+- [x] **Job card** (`/job-orders/[id]/card`) — the sheet printed and left inside the vehicle. Carries owner name + phone, vehicle details, the invoice's work-item **descriptions only**, and a QR code that decodes to this job order's absolute URL. **No money, no timeline, no technician commentary.** Prints alone on A4 (the app shell is hidden and `.job-card` is unframed).
+- [x] **`scripts/job-card-check.mjs`** — 22 checks: content, the absence of money/internals, QR decode, print CSS (`@page` A4, shell hidden, card unframed), and no 390px overflow.
+
+### Print CSS gotcha (cost us a silent bug)
+
+`@page` must live **outside** `@layer base`. Tailwind v4's parser cannot handle `@page` nested inside `@media print` inside `@layer`, and drops the `@page` rule **and every rule that follows it in the same block** — which silently removed the `.job-card` unframing. The `@media print` rules stay inside `@layer base` (a bare top-level `@media print` is dropped entirely), but `@page` sits at the top level.
+
+### Open in Phase 2
+
+- Receipts (slice 4): `supabase/migrations/0015_receipts.sql` needs pasting — `receipts.job_order_id` is `NOT NULL` today and there is no `receipts.invoice_id`, so invoice-first payments cannot have receipts yet.
+

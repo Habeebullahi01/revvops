@@ -231,3 +231,61 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/*
+ * Printing. The card route (`/job-orders/[id]/card`) is the paper target: it
+ * prints alone, on one A4 sheet, with no app chrome. The same rules make any
+ * other page print as its own content rather than as a screenshot of the app.
+ *
+ * These rules live inside `@layer base` on purpose: the Tailwind v4 pipeline
+ * in this project only emits CSS it manages, and a bare top-level `@media
+ * print` block is silently dropped. Verified by reading the served stylesheet.
+ *
+ * `@page` is the exception and lives outside the layer, below. Tailwind's
+ * parser cannot handle `@page` nested inside `@media print` inside `@layer`:
+ * it drops the `@page` rule *and* every rule that follows it in the same
+ * block — which silently cost us the `.job-card` unframing. Keeping `@page`
+ * at the top level (outside `@layer base`) survives intact.
+ */
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
+@layer base {
+  @media print {
+    body {
+      background: #ffffff;
+    }
+
+    aside,
+    header,
+    [data-print-hide] {
+      display: none !important;
+    }
+
+    /* Unframe the sheet: no inset, radius or edge on paper. */
+    body > div,
+    main {
+      display: block !important;
+      height: auto !important;
+      overflow: visible !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      background: #ffffff !important;
+    }
+
+    /* The card paints its own spacing; @page supplies the margins. */
+    .job-card {
+      max-width: none !important;
+      border: 0 !important;
+      padding: 0 !important;
+    }
+
+    a[href]::after {
+      content: "";
+    }
+  }
+}

@@ -1,6 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+/**
+ * The technician vehicle lens's job feed. Reads `job_orders_tech_view`, not
+ * `job_orders`: RLS is row-level, not column-level, so selecting from the
+ * real table would hand a technician `estimated_amount` / `billing_type`
+ * even though they can see the rows (BUSINESS_RULES.md §5).
+ */
 export async function GET(request: Request) {
   const supabase = await createClient();
   const { searchParams } = new URL(request.url);

@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -49,5 +50,7 @@ export async function logExecutionStatus(input: {
   });
 
   if (error) throw new Error(error.message);
+
+  revalidatePath("/technician");
   return { ok: true };
 }

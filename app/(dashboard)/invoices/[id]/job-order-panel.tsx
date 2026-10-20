@@ -131,10 +131,10 @@ export function JobOrderPanel({
               {jobOrder.job_number}
             </span>
             <Link
-              href={`/job-orders?job=${jobOrder.id}`}
+              href={`/job-orders/${jobOrder.id}`}
               className="text-sm font-medium text-brand underline underline-offset-2"
             >
-              Open job orders
+              Open job order
             </Link>
           </div>
           <p className="text-xs text-muted-foreground">
