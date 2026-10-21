@@ -45,7 +45,11 @@ Working list. Tick things off as they land; keep the reasons short.
 
 ### Open in Phase 2
 
-- Receipts (slice 4): `supabase/migrations/0015_receipts.sql` needs pasting — `receipts.job_order_id` is `NOT NULL` today and there is no `receipts.invoice_id`, so invoice-first payments cannot have receipts yet.
+- **`supabase/migrations/0015_receipts_and_invoice_fields.sql` needs pasting.** It carries
+  three groups of change (receipts usable by invoice-first payments, `billing_type` moved to
+  invoices, invoice `category`). Until it is applied, `receipts.job_order_id` is `NOT NULL`
+  and there is no `receipts.invoice_id`, so no receipt can be issued for an invoice payment,
+  and the code must not yet assume `invoices.billing_type` / `invoices.category` exist.
 
 ## Model corrections — raised 2026-10-21
 
@@ -61,27 +65,29 @@ silently. Ordered by how much they block.
   it optional, and relabel it on the invoice form, the job card and the job facts card.
   Needs a migration to drop `NOT NULL`.
 
-- **`billing_type` belongs on the invoice, not the job order.** It lives on `job_orders`
-  today (`0001`: CHECK `IN ('cng_installment','post_service','upfront')`), is set when the
-  job order is raised from the invoice, and is edited from the job order. Move it to
-  `invoices` and surface it read-only on the job order; the job order then *references* how
-  the invoice is billed instead of owning it. Also fix the vocabulary — the agreed terms are
-  **upfront**, **instalmental** (not `cng_installment`) and **post-service**, and *any* type
-  may apply to *any* service (the current name implies CNG-only; the label "CNG instalment"
-  in three places reinforces that). Touches `job-order-actions.ts`, `job-order-panel.tsx`,
-  `job-facts.tsx`, the job card, the job-orders list, the technician view comment in `0009`,
-  and the invoice form. Worth noting `BILLING_LABEL` is currently copy-pasted into
-  `job-orders/page.tsx`, `job-facts.tsx` and the card — the move is a good moment to put it
-  in one shared module (the way `status-pill.tsx` holds the execution-status vocabulary).
+- **`billing_type` belongs on the invoice, not the job order — migration written (0015),
+  code not yet updated.** 0015 adds `invoices.billing_type` (NOT NULL, default `upfront`),
+  backfills from the linked job order (`cng_installment` → `instalmental`), then drops
+  `job_orders.billing_type`. The agreed vocabulary is **upfront**, **instalmental**,
+  **post-service**, and *any* plan may apply to *any* service — the old name implied
+  CNG-only, and the label "CNG instalment" in three places reinforced that. Still to do in
+  code once 0015 is pasted: set `billing_type` on the invoice form instead of at
+  job-order-raise time; show it read-only on `job-facts.tsx` and the card; drop it from
+  `job-order-actions.ts` (`BILLING_TYPES` validation, create + update paths),
+  `job-order-panel.tsx`, and the job-orders list. `BILLING_LABEL` is currently copy-pasted
+  into `job-orders/page.tsx`, `job-facts.tsx` and `card/page.tsx` — the move is the moment
+  to put it in one shared module (the way `status-pill.tsx` holds the execution-status
+  vocabulary). The technician view (`0009`) never exposed `billing_type`, so nothing changes
+  there.
 
-- **Invoices need a category / tag.** Nothing distinguishes an over-the-counter parts sale
-  from servicing from a CNG installation, which blocks any useful reporting later. Add an
-  invoice category (at least: **sales**, **maintenance**, **cng**) and use it for reporting.
-  This has a schema consequence worth deciding at the same time: a walk-in parts sale may
-  have **no vehicle** and possibly **no customer record**, yet `invoices.customer_id` and
-  `invoices.vehicle_id` are both `NOT NULL` (0010). Selling a part to a passer-by is
-  impossible today. Decide whether invoices gain an optional walk-in path (nullable vehicle,
-  a name/phone captured inline) before building the report that relies on it.
+- **Invoices need a category — migration written (0015), UI not yet wired.** 0015 adds
+  `invoices.category` (NOT NULL, default `maintenance`, CHECK `sales | maintenance | cng`)
+  plus an index. Still to do: expose it on the invoice form and list, and use it for
+  reporting. **Deferred on purpose:** a true walk-in parts sale is still impossible, because
+  `invoices.customer_id` and `invoices.vehicle_id` remain `NOT NULL` — selling a part to a
+  passer-by needs a nullable vehicle and a way to capture a name/phone inline, which is a
+  UI change of its own. Settle that before building a report that assumes the `sales`
+  category can be populated freely.
 
 - **Print the job card from the job order detail page — DONE.** The separate
   `/job-orders/[id]/card` route is gone. The card is now a presentational component
