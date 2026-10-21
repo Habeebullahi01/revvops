@@ -13,6 +13,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { signOutAction } from "@/app/actions/auth";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
 export interface ShellLink {
@@ -120,6 +121,9 @@ export function AppShell({
           <span className="text-xs text-muted-foreground">WMS</span>
         </div>
         <div className="flex-1 overflow-y-auto px-3 pb-3">{navList}</div>
+        <div className="flex items-center justify-end px-3 pb-3">
+          <ThemeToggle />
+        </div>
       </aside>
 
       {/* right of the frame: 48px topbar on the chrome, then the sheet */}
@@ -137,7 +141,10 @@ export function AppShell({
           {/* phone: section title here. desktop: reserved for the global
               job search, which arrives with the Phase 1 job list. */}
           <p className="truncate text-sm font-medium md:hidden">{heading}</p>
-          <div className="ml-auto">{account}</div>
+          <div className="ml-auto flex items-center gap-1">
+            <ThemeToggle className="md:hidden" />
+            {account}
+          </div>
         </header>
 
         {/* the sheet: butts against sidebar + topbar, inset 8px right/bottom */}
@@ -164,7 +171,10 @@ export function AppShell({
             <span className="text-xs text-muted-foreground">WMS</span>
           </SheetHeader>
           <div className="flex-1 overflow-y-auto pr-1">{navList}</div>
-          <div className="border-t pt-3">{account}</div>
+          <div className="flex items-center justify-between gap-2 border-t pt-3">
+            {account}
+            <ThemeToggle />
+          </div>
         </SheetContent>
       </Sheet>
     </div>
