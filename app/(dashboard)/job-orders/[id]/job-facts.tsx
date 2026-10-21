@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDownIcon, PencilIcon } from "lucide-react";
+import { PencilIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,22 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { updateJobOrder } from "@/app/actions/job-order-actions";
+import { billingLabel } from "@/lib/invoice-vocabulary";
 import { formatNaira } from "@/lib/money";
-
-const selectCls =
-  "h-8 w-full appearance-none rounded-lg border border-input bg-transparent ps-2.5 pe-8 text-base outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 md:text-sm";
-
-const BILLING_LABEL: Record<string, string> = {
-  cng_installment: "CNG instalment",
-  post_service: "Post-service",
-  upfront: "Upfront",
-};
-
-const BILLING_TYPES = [
-  { value: "post_service", label: "Post service — settle after the work" },
-  { value: "upfront", label: "Upfront — paid before work starts" },
-  { value: "cng_installment", label: "CNG installment — conversion plan" },
-] as const;
 
 export interface JobFacts {
   jobOrderId: string;
@@ -84,10 +70,6 @@ export function JobFactsCard({ facts }: { facts: JobFacts }) {
       await updateJobOrder({
         jobOrderId: facts.jobOrderId,
         complaint: draft.complaint,
-        billingType: draft.billingType as
-          | "cng_installment"
-          | "post_service"
-          | "upfront",
         dateIn: draft.dateIn,
         expectedDateOut: draft.expectedDateOut || null,
         actualDateOut: draft.actualDateOut || null,
@@ -107,7 +89,7 @@ export function JobFactsCard({ facts }: { facts: JobFacts }) {
   };
 
   const rows: { label: string; value: React.ReactNode }[] = [
-    { label: "Billing type", value: BILLING_LABEL[facts.billingType] ?? facts.billingType },
+    { label: "Billing type", value: billingLabel(facts.billingType) },
     { label: "Date in", value: shortDate(facts.dateIn) },
     { label: "Expected date out", value: shortDate(facts.expectedDateOut) },
     { label: "Actual date out", value: shortDate(facts.actualDateOut) },
@@ -194,23 +176,10 @@ export function JobFactsCard({ facts }: { facts: JobFacts }) {
 
             <label className="block space-y-1.5">
               <span className="text-sm font-medium">Billing type</span>
-              <span className="relative block">
-                <select
-                  aria-label="Billing type"
-                  className={selectCls}
-                  value={draft.billingType}
-                  onChange={(event) =>
-                    setDraft({ ...draft, billingType: event.target.value })
-                  }
-                >
-                  {BILLING_TYPES.map((type) => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDownIcon className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-              </span>
+              <p className="text-sm text-muted-foreground">
+                {billingLabel(facts.billingType)} — set on the invoice, not
+                here.
+              </p>
             </label>
 
             <div className="grid gap-3 sm:grid-cols-2">

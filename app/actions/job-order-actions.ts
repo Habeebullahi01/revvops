@@ -6,13 +6,6 @@ import { logAudit } from "@/lib/audit";
 import { createClient } from "@/lib/supabase/server";
 import { JOB_ORDER_PAID_RATIO } from "@/lib/invoice-rules";
 
-const BILLING_TYPES = [
-  "cng_installment",
-  "post_service",
-  "upfront",
-] as const;
-export type BillingType = (typeof BILLING_TYPES)[number];
-
 /**
  * The execution vocabulary (job_orders CHECK, 0008). Officers may jump to any
  * value from any value; a cancelled job is terminal.
@@ -28,7 +21,6 @@ export type OfficerExecutionStatus = (typeof EXECUTION_STATUSES)[number];
 
 export interface CreateJobOrderFromInvoiceInput {
   invoiceId: string;
-  billingType: BillingType;
   dateIn: string; // YYYY-MM-DD
   expectedDateOut?: string; // YYYY-MM-DD
   assignedTechnicianId?: string;
@@ -49,9 +41,6 @@ export async function createJobOrderFromInvoice(
   const { profile } = await requireRole(["admin", "manager", "reception"]);
 
   if (!input.invoiceId) throw new Error("Invoice is required");
-  if (!BILLING_TYPES.includes(input.billingType)) {
-    throw new Error("Unsupported billing type");
-  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.dateIn)) {
     throw new Error("Date in is required");
   }
@@ -107,7 +96,6 @@ export async function createJobOrderFromInvoice(
       job_number: jobNumber,
       customer_id: invoice.customer_id,
       vehicle_id: invoice.vehicle_id,
-      billing_type: input.billingType,
       complaint: invoice.complaint,
       estimated_amount: total,
       assigned_technician_id: input.assignedTechnicianId || null,
@@ -295,7 +283,6 @@ export async function assignJobOrder(input: {
 export interface UpdateJobOrderInput {
   jobOrderId: string;
   complaint: string;
-  billingType: BillingType;
   dateIn: string;
   expectedDateOut?: string | null;
   actualDateOut?: string | null;
@@ -317,9 +304,6 @@ export async function updateJobOrder(input: UpdateJobOrderInput) {
 
   if (!input.jobOrderId) throw new Error("Job order is required");
   if (!input.complaint?.trim()) throw new Error("Complaint is required");
-  if (!BILLING_TYPES.includes(input.billingType)) {
-    throw new Error("Unsupported billing type");
-  }
   if (!ISO_DATE.test(input.dateIn)) throw new Error("Date in is required");
   if (input.expectedDateOut && !ISO_DATE.test(input.expectedDateOut)) {
     throw new Error("Expected date out is not a valid date");
@@ -352,7 +336,6 @@ export async function updateJobOrder(input: UpdateJobOrderInput) {
     .from("job_orders")
     .update({
       complaint: input.complaint.trim(),
-      billing_type: input.billingType,
       date_in: input.dateIn,
       expected_date_out: input.expectedDateOut || null,
       actual_date_out: input.actualDateOut || null,

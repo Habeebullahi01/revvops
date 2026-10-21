@@ -473,12 +473,18 @@ try {
       const jobBtn = [...document.querySelectorAll("button")].find((b) =>
         /Create job order/.test(b.textContent),
       );
+      // Receipt numbers are shown as links in the payments list, one per
+      // payment (the original auto-issued when the payment was recorded).
+      const receipts = [...document.querySelectorAll('a[href^="/receipts/"]')].map(
+        (a) => a.textContent.trim(),
+      );
       return {
         balance: (text.match(/Balance\s*₦([\d,.]+)/) || [])[1] || null,
         paid: (text.match(/Paid to date\s*₦([\d,.]+)/) || [])[1] || null,
         pill: (text.match(/^\s*(Unpaid|Part paid|Paid)\s*$/m) || [])[1] || null,
         jobDisabled: jobBtn ? jobBtn.disabled : null,
         alert: document.querySelector('[role="alert"]')?.innerText ?? null,
+        receipts,
       };
     });
 
@@ -506,6 +512,11 @@ try {
   check("partial payment recorded", pay.paid === "5,000.00", JSON.stringify(pay));
   check("status pill reads Part paid", pay.pill === "Part paid", JSON.stringify(pay));
   check("job order still locked below 50%", pay.jobDisabled === true, JSON.stringify(pay));
+  check(
+    "payment auto-issued a receipt",
+    pay.receipts.length === 1 && /^RCP-\d{4}-\d{4}$/.test(pay.receipts[0]),
+    JSON.stringify(pay.receipts),
+  );
 
   const usedFullBalance = await page.eval(() => {
     const btn = [...document.querySelectorAll("button")].find((b) =>
@@ -522,6 +533,65 @@ try {
   check("second payment clears the balance", pay.paid === "17,500.00" && pay.balance === "0.00", JSON.stringify(pay));
   check("status pill reads Paid", pay.pill === "Paid", JSON.stringify(pay));
   check("job order button unlocks at 50%+", pay.jobDisabled === false, JSON.stringify(pay));
+  check(
+    "each payment carries its own receipt",
+    pay.receipts.length === 2 && new Set(pay.receipts).size === 2,
+    JSON.stringify(pay.receipts),
+  );
+
+  // The receipt sheet is a real page: open it and confirm it renders the
+  // payment and has a print control (the artefact must be printable).
+  const receiptHref = await page.eval(() => {
+    const a = document.querySelector('a[href^="/receipts/"]');
+    return a ? a.getAttribute("href") : null;
+  });
+  if (receiptHref) {
+    await page.goto(`${BASE}${receiptHref}`);
+    await sleep(600);
+    const sheet = await page.eval(() => ({
+      heading: !!document.querySelector("h1")?.textContent?.match(/Receipt/),
+      hasPrint: [...document.querySelectorAll("button")].some((b) =>
+        /Print receipt/.test(b.textContent),
+      ),
+      hiddenSheetPresent: !!document.querySelector(".receipt-sheet"),
+    }));
+    check("receipt page renders", sheet.heading && sheet.hasPrint, JSON.stringify(sheet));
+    check("receipt sheet is on the page (print-only)", sheet.hiddenSheetPresent, JSON.stringify(sheet));
+
+    // Emulate print media: the sheet alone must be visible, and the screen
+    // summary must be gone. A receipt is a financial document, so unlike the
+    // job card it MUST carry the money.
+    await page.send("Emulation.setEmulatedMedia", { media: "print" });
+    await sleep(400);
+    const printed = await page.eval(() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const s = getComputedStyle(el);
+        if (s.display === "none" || s.visibility === "hidden") return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      };
+      const sheetEl = document.querySelector(".receipt-sheet");
+      return {
+        sheetShown: visible(sheetEl),
+        screenShown: visible(sheetEl ? sheetEl.parentElement.previousElementSibling : null),
+        asideShown: visible(document.querySelector("aside")),
+        text: document.body.innerText,
+      };
+    });
+    check("print media reveals the receipt sheet", printed.sheetShown === true);
+    check("print media hides the screen summary", printed.screenShown === false, String(printed.screenShown));
+    check("print media hides the sidebar", printed.asideShown === false, String(printed.asideShown));
+    check("printed receipt states the amount and balance", printed.text.includes("\u20a6") && /Balance outstanding/.test(printed.text));
+    await page.send("Emulation.setEmulatedMedia", { media: "" });
+    await sleep(300);
+
+    // Return to the invoice so the rest of the flow continues.
+    await page.goto(`${BASE}${detailPath}`);
+    await sleep(600);
+  } else {
+    check("receipt page renders", false, "no receipt link found");
+  }
 
   await clickByText("Create job order");
   await sleep(500);

@@ -8,6 +8,7 @@ import {
 } from "@/components/status-pill";
 import { buttonVariants } from "@/components/ui/button";
 import { requireRole } from "@/lib/auth";
+import { billingLabel } from "@/lib/invoice-vocabulary";
 import { likePattern, sanitizeQuery } from "@/lib/search";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "cn";
@@ -25,13 +26,7 @@ const FINANCIAL_LABEL: Record<string, string> = {
 
 /** Columns every job-order row needs: the job itself plus its joined names. */
 const ROW_COLUMNS =
-  "id, job_number, execution_status, financial_status, billing_type, complaint, date_in, expected_date_out, actual_date_out, estimated_amount, actual_amount, customer_id, created_at, customers(name), vehicles(license_plate, make, model), assigned:profiles!job_orders_assigned_technician_id_fkey(full_name)";
-
-const BILLING_LABEL: Record<string, string> = {
-  cng_installment: "CNG instalment",
-  post_service: "Post-service",
-  upfront: "Upfront",
-};
+  "id, job_number, execution_status, financial_status, complaint, date_in, expected_date_out, actual_date_out, estimated_amount, actual_amount, customer_id, created_at, customers(name), vehicles(license_plate, make, model), assigned:profiles!job_orders_assigned_technician_id_fkey(full_name), invoices(billing_type, category)";
 
 const shortDate = (value: string | null) =>
   value
@@ -47,7 +42,6 @@ interface JobRow {
   job_number: string;
   execution_status: string;
   financial_status: string;
-  billing_type: string;
   complaint: string;
   date_in: string;
   expected_date_out: string | null;
@@ -59,6 +53,8 @@ interface JobRow {
   customers: { name: string } | null;
   vehicles: { license_plate: string; make: string; model: string } | null;
   assigned: { full_name: string } | null;
+  /** How the invoice was billed. Moved off job_orders in 0015. */
+  invoices: { billing_type: string; category: string } | null;
 }
 
 type Filters = Record<string, string | undefined>;
@@ -299,7 +295,7 @@ export default async function JobOrdersPage({
                         {row.job_number}
                       </Link>
                       <div className="text-xs text-muted-foreground">
-                        {BILLING_LABEL[row.billing_type] ?? row.billing_type}
+                        {billingLabel(row.invoices?.billing_type)}
                       </div>
                     </td>
                     <td className="py-3 pr-4 align-top">

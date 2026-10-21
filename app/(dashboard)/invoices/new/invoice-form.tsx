@@ -23,6 +23,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createInvoice } from "@/app/actions/invoice-actions";
+import {
+  BILLING_OPTIONS,
+  CATEGORY_OPTIONS,
+  type BillingType,
+  type InvoiceCategory,
+} from "@/lib/invoice-vocabulary";
 import { NAIRA, formatNaira } from "@/lib/money";
 import {
   NewCustomerDialog,
@@ -128,6 +134,8 @@ export function InvoiceForm() {
   // ---- invoice fields ----
   const [vehicleId, setVehicleId] = useState("");
   const [complaint, setComplaint] = useState("");
+  const [billingType, setBillingType] = useState<BillingType>("upfront");
+  const [category, setCategory] = useState<InvoiceCategory>("maintenance");
   const [lines, setLines] = useState<CostLine[]>([blankLine()]);
   const [total, setTotal] = useState("");
   const [totalTouched, setTotalTouched] = useState(false);
@@ -288,6 +296,8 @@ export function InvoiceForm() {
         customerId,
         vehicleId,
         complaint: complaint.trim(),
+        billingType,
+        category,
         costBreakdown: billableLines.map((line) => ({
           description: line.description.trim(),
           amount: Math.round((Number.parseFloat(line.amount) || 0) * 100) / 100,
@@ -505,6 +515,40 @@ export function InvoiceForm() {
                 value={complaint}
                 onChange={(e) => setComplaint(e.target.value)}
               />
+            </div>
+
+            {/* ── Billing + category ───────────────────────────────── */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="invoice-billing">Billing type</Label>
+                <select
+                  id="invoice-billing"
+                  className={selectCls}
+                  value={billingType}
+                  onChange={(e) => setBillingType(e.target.value as BillingType)}
+                >
+                  {BILLING_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invoice-category">Category</Label>
+                <select
+                  id="invoice-category"
+                  className={selectCls}
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value as InvoiceCategory)}
+                >
+                  {CATEGORY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* ── Cost breakdown ───────────────────────────────────── */}

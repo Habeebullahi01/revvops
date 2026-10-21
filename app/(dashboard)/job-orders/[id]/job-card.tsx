@@ -1,4 +1,5 @@
 import { StatusPill } from "@/components/status-pill";
+import { billingLabel } from "@/lib/invoice-vocabulary";
 
 /**
  * The workshop job card — the sheet that is printed and left inside the
@@ -27,7 +28,8 @@ export interface JobCardData {
   id: string;
   job_number: string;
   execution_status: string;
-  billing_type: string;
+  /** Read from the linked invoice (the column moved there in 0015). */
+  billing_type: string | null;
   complaint: string;
   date_in: string;
   expected_date_out: string | null;
@@ -46,12 +48,6 @@ export interface JobCardData {
     color: string | null;
   } | null;
 }
-
-const BILLING_LABEL: Record<string, string> = {
-  cng_installment: "CNG instalment",
-  post_service: "Post-service",
-  upfront: "Upfront",
-};
 
 const shortDate = (value: string | null) =>
   value
@@ -145,7 +141,7 @@ export function JobCard({
             Billing
           </h2>
           <p className="text-sm">
-            {BILLING_LABEL[job.billing_type] ?? job.billing_type}
+            {billingLabel(job.billing_type)}
           </p>
         </div>
       </section>

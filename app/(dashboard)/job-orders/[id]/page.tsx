@@ -31,7 +31,6 @@ interface JobDetail {
   job_number: string;
   execution_status: string;
   financial_status: string;
-  billing_type: string;
   complaint: string;
   date_in: string;
   expected_date_out: string | null;
@@ -64,6 +63,8 @@ interface InvoiceSummary {
   total_amount: string;
   created_at: string;
   cost_breakdown: CardCostLine[] | null;
+  billing_type: string | null;
+  category: string | null;
 }
 
 const shortDate = (value: string | null) =>
@@ -89,7 +90,7 @@ export default async function JobOrderDetailPage({
     .from("job_orders")
     .select(
       `
-      id, job_number, execution_status, financial_status, billing_type, complaint,
+      id, job_number, execution_status, financial_status, complaint,
       date_in, expected_date_out, actual_date_out, estimated_amount, actual_amount,
       notes, created_at, created_by, assigned_technician_id,
       customer:customer_id ( id, name, phone, email ),
@@ -115,7 +116,7 @@ export default async function JobOrderDetailPage({
       .order("created_at", { ascending: false }),
     supabase
       .from("invoices")
-      .select("id, total_amount, created_at, cost_breakdown")
+      .select("id, total_amount, created_at, cost_breakdown, billing_type, category")
       .eq("job_order_id", job.id)
       .maybeSingle(),
     supabase.from("profiles").select("id, full_name"),
@@ -299,7 +300,7 @@ export default async function JobOrderDetailPage({
               jobOrderId: job.id,
               jobNumber: job.job_number,
               complaint: job.complaint,
-              billingType: job.billing_type,
+              billingType: invoice?.billing_type ?? "",
               dateIn: job.date_in,
               expectedDateOut: job.expected_date_out ?? "",
               actualDateOut: job.actual_date_out ?? "",
@@ -417,7 +418,7 @@ export default async function JobOrderDetailPage({
             id: job.id,
             job_number: job.job_number,
             execution_status: job.execution_status,
-            billing_type: job.billing_type,
+            billing_type: invoice?.billing_type ?? null,
             complaint: job.complaint,
             date_in: job.date_in,
             expected_date_out: job.expected_date_out,

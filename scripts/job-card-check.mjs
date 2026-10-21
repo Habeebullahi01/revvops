@@ -115,6 +115,8 @@ const [invoice] = await restPost("invoices", {
   customer_id: customer.id,
   vehicle_id: vehicle.id,
   complaint: "CNG conversion plus a full service",
+  billing_type: "upfront",
+  category: "cng",
   cost_breakdown: [
     { description: "CNG conversion kit and installation", amount: 400000, itemType: "part" },
     { description: "Engine oil and filter change", amount: 45000, itemType: "part" },
@@ -133,7 +135,6 @@ const [job] = await restPost("job_orders", {
   job_number: `JO-${TAG.replace(/[^A-Z]/g, "")}-${stamp}`,
   customer_id: customer.id,
   vehicle_id: vehicle.id,
-  billing_type: "upfront",
   complaint: invoice.complaint,
   estimated_amount: 525000,
   execution_status: "in_progress",

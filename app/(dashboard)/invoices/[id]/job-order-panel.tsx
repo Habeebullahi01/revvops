@@ -24,13 +24,6 @@ interface JobOrderSummary {
   execution_status: string;
 }
 
-const BILLING_TYPES: { value: "cng_installment" | "post_service" | "upfront"; label: string }[] =
-  [
-    { value: "post_service", label: "Post service — settle after the work" },
-    { value: "upfront", label: "Upfront — paid before work starts" },
-    { value: "cng_installment", label: "CNG installment — conversion plan" },
-  ];
-
 const selectCls =
   "h-8 w-full appearance-none rounded-lg border border-input bg-transparent ps-2.5 pe-8 text-base outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 md:text-sm";
 
@@ -59,9 +52,6 @@ export function JobOrderPanel({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [billingType, setBillingType] = useState<
-    (typeof BILLING_TYPES)[number]["value"]
-  >("post_service");
   const [dateIn, setDateIn] = useState(today);
   const [dateOut, setDateOut] = useState("");
   const [technicianId, setTechnicianId] = useState("");
@@ -92,7 +82,6 @@ export function JobOrderPanel({
     try {
       const jobOrder = await createJobOrderFromInvoice({
         invoiceId,
-        billingType,
         dateIn,
         expectedDateOut: dateOut || undefined,
         assignedTechnicianId: technicianId || undefined,
@@ -207,33 +196,10 @@ export function JobOrderPanel({
       </CardHeader>
       <CardContent>
         <form onSubmit={submit} noValidate className="space-y-3">
-          <label className="block space-y-1.5">
-            <span className="text-sm font-medium">
-              Billing type{" "}
-              <span aria-hidden className="text-destructive">
-                *
-              </span>
-            </span>
-            <span className="relative block">
-              <select
-                aria-label="Billing type"
-                className={selectCls}
-                value={billingType}
-                onChange={(e) =>
-                  setBillingType(
-                    e.target.value as (typeof BILLING_TYPES)[number]["value"],
-                  )
-                }
-              >
-                {BILLING_TYPES.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDownIcon className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            </span>
-          </label>
+          <p className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+            Billing type and category come from the invoice. Change them there
+            if they are wrong — this job order only references them.
+          </p>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block space-y-1.5">

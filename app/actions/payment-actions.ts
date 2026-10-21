@@ -82,6 +82,20 @@ export async function recordPayment(input: RecordPaymentInput) {
 
   if (error) throw new Error(error.message);
 
+  // Every payment is issued a receipt at the moment it is recorded (owner
+  // decision D1). The number is gapless (RCP-YYYY-NNNN) via the same
+  // numbering RPC the job order uses. The insert is done here rather than by
+  // a trigger so the receipt's numbering and audit trail live in one place a
+  // reader can follow; the one-original-per-payment index (0015) is the
+  // backstop if this path is ever reached twice.
+  const receipt = await issueReceiptForPayment({
+    paymentId: data.id,
+    invoiceId: input.invoiceId,
+    jobOrderId: invoice.job_order_id,
+    amount,
+    userId: profile.id,
+  });
+
   revalidatePath(`/invoices/${input.invoiceId}`);
   revalidatePath("/invoices");
 
@@ -90,7 +104,66 @@ export async function recordPayment(input: RecordPaymentInput) {
     action: "payment.recorded",
     entityType: "payment",
     entityId: data.id,
-    details: { invoice_id: input.invoiceId, amount, method: input.paymentMethod },
+    details: {
+      invoice_id: input.invoiceId,
+      amount,
+      method: input.paymentMethod,
+      receipt_number: receipt.receipt_number,
+    },
+  });
+
+  return { ...data, receipt_number: receipt.receipt_number };
+}
+
+/**
+ * Issue the original receipt for a payment. Kept as a private helper so
+ * `recordPayment` reads as one flow: validate, insert payment, receipt.
+ */
+async function issueReceiptForPayment(input: {
+  paymentId: string;
+  invoiceId: string;
+  jobOrderId: string | null;
+  amount: number;
+  userId: string;
+}) {
+  const supabase = await createClient();
+
+  const { data: number, error: numberError } = await supabase.rpc(
+    "get_next_document_number",
+    { p_document_type: "receipt" },
+  );
+  if (numberError) throw new Error(numberError.message);
+
+  const { data, error } = await supabase
+    .from("receipts")
+    .insert({
+      receipt_number: number,
+      payment_id: input.paymentId,
+      // A receipt hangs off the invoice (invoice-first) or the job order,
+      // whichever exists; the CHECK requires at least one.
+      invoice_id: input.invoiceId,
+      job_order_id: input.jobOrderId,
+      amount: input.amount,
+      printed_by: input.userId,
+    })
+    .select("id, receipt_number")
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  // The audit entry for the receipt itself, so "was this printed?" is
+  // answerable from the log without reading the receipts table.
+  await logAudit({
+    userId: input.userId,
+    action: "receipt.issued",
+    entityType: "receipt",
+    entityId: data.id,
+    details: {
+      receipt_number: data.receipt_number,
+      payment_id: input.paymentId,
+      invoice_id: input.invoiceId,
+      amount: input.amount,
+    },
   });
 
   return data;

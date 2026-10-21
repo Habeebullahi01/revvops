@@ -2,6 +2,7 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { FinancialPill, Money } from "@/components/money";
 import { requireRole } from "@/lib/auth";
+import { billingLabel, categoryLabel } from "@/lib/invoice-vocabulary";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "cn";
 
@@ -14,6 +15,8 @@ interface InvoiceRow {
   complaint: string;
   created_at: string;
   job_order_id: string | null;
+  billing_type: string;
+  category: string;
   customers: { name: string } | null;
   vehicles: { license_plate: string; make: string; model: string } | null;
 }
@@ -41,7 +44,7 @@ export default async function InvoicesPage() {
     supabase
       .from("invoices")
       .select(
-        "id, total_amount, complaint, created_at, job_order_id, customers(name), vehicles(license_plate, make, model)",
+        "id, total_amount, complaint, created_at, job_order_id, billing_type, category, customers(name), vehicles(license_plate, make, model)",
       )
       .order("created_at", { ascending: false })
       .limit(200),
@@ -141,6 +144,10 @@ export default async function InvoicesPage() {
                       </Link>
                       <div className="text-xs text-muted-foreground">
                         {raisedOn(row.created_at)}
+                      </div>
+                      <div className="pt-0.5 text-xs text-muted-foreground">
+                        {categoryLabel(row.category)} ·{" "}
+                        {billingLabel(row.billing_type)}
                       </div>
                     </td>
                     <td className="py-3 pr-4 align-top">

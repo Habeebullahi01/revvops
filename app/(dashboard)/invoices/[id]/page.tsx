@@ -10,10 +10,12 @@ import {
 } from "@/components/ui/card";
 import { FinancialPill } from "@/components/money";
 import { requireRole } from "@/lib/auth";
+import { billingLabel, categoryLabel, CATEGORY_STYLES } from "@/lib/invoice-vocabulary";
 import { formatNaira } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 import { JobOrderPanel } from "./job-order-panel";
 import { PaymentForm } from "./payment-form";
+import { ReprintReceiptButton } from "./reprint-receipt-button";
 
 // Session-reading page: renders at request time (blocking, see layout).
 export const instant = false;
@@ -31,6 +33,8 @@ interface InvoiceDetail {
   total_amount: string;
   created_at: string;
   job_order_id: string | null;
+  billing_type: string;
+  category: string;
   customer: {
     id: string;
     name: string;
@@ -56,6 +60,12 @@ interface PaymentDetail {
   notes: string | null;
   created_at: string;
   receiver: { full_name: string } | null;
+  /** The receipt auto-issued when this payment was recorded (D1). */
+  receipts: {
+    id: string;
+    receipt_number: string;
+    is_duplicate: boolean | null;
+  }[];
 }
 
 const METHOD_LABEL: Record<string, string> = {
@@ -80,6 +90,7 @@ export default async function InvoiceDetailPage({
     .select(
       `
       id, complaint, cost_breakdown, total_amount, created_at, job_order_id,
+      billing_type, category,
       customer:customer_id ( id, name, phone, email, address ),
       vehicle:vehicle_id ( id, license_plate, make, model, year ),
       creator:created_by ( id, full_name )
@@ -97,7 +108,7 @@ export default async function InvoiceDetailPage({
     supabase
       .from("payments")
       .select(
-        "id, amount, payment_method, reference_number, notes, created_at, receiver:received_by ( full_name )",
+        "id, amount, payment_method, reference_number, notes, created_at, receiver:received_by ( full_name ), receipts ( id, receipt_number, is_duplicate )",
       )
       .eq("invoice_id", row.id)
       .order("created_at", { ascending: true }),
@@ -164,6 +175,14 @@ export default async function InvoiceDetailPage({
               Raised {raisedOn}
               {row.creator ? ` by ${row.creator.full_name}` : ""}
             </p>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span
+                className={`inline-flex h-6 items-center rounded-4xl border px-2.5 ${CATEGORY_STYLES[row.category as keyof typeof CATEGORY_STYLES] ?? "border-border bg-muted/50 text-foreground"}`}
+              >
+                {categoryLabel(row.category)}
+              </span>
+              <span>{billingLabel(row.billing_type)}</span>
+            </div>
           </div>
           <FinancialPill status={status} className="h-6 px-2.5 text-sm" />
         </div>
@@ -330,45 +349,66 @@ export default async function InvoiceDetailPage({
             <CardContent className="space-y-4">
               {payments.length > 0 && (
                 <ul className="divide-y divide-rule overflow-hidden rounded-lg border border-border text-sm">
-                  {payments.map((payment) => (
-                    <li
-                      key={payment.id}
-                      className="flex items-start justify-between gap-3 px-3 py-2.5"
-                    >
-                      <div>
-                        <div className="font-medium tabular-nums">
-                          {formatNaira(Number(payment.amount))}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {METHOD_LABEL[payment.payment_method] ??
-                            payment.payment_method}
-                          {payment.reference_number
-                            ? ` · Ref ${payment.reference_number}`
-                            : ""}
-                        </div>
-                        {payment.notes && (
-                          <div className="text-xs text-muted-foreground">
-                            {payment.notes}
-                          </div>
-                        )}
-                      </div>
-                      <div className="shrink-0 text-right text-xs text-muted-foreground">
+                  {payments.map((payment) => {
+                    // Every payment carries exactly one original receipt plus
+                    // any reprints (D1, D4). The original is the one to link;
+                    // reprints are reachable from the receipt sheet itself.
+                    const receipts = payment.receipts ?? [];
+                    const original =
+                      receipts.find((r) => !r.is_duplicate) ?? receipts[0];
+                    return (
+                      <li
+                        key={payment.id}
+                        className="flex items-start justify-between gap-3 px-3 py-2.5"
+                      >
                         <div>
-                          {new Date(payment.created_at).toLocaleDateString(
-                            "en-NG",
-                            {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            },
+                          <div className="font-medium tabular-nums">
+                            {formatNaira(Number(payment.amount))}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {METHOD_LABEL[payment.payment_method] ??
+                              payment.payment_method}
+                            {payment.reference_number
+                              ? ` · Ref ${payment.reference_number}`
+                              : ""}
+                          </div>
+                          {payment.notes && (
+                            <div className="text-xs text-muted-foreground">
+                              {payment.notes}
+                            </div>
+                          )}
+                          {original && (
+                            <div className="pt-1 text-xs">
+                              <Link
+                                href={`/receipts/${original.id}`}
+                                className="font-mono font-medium text-brand underline underline-offset-2"
+                              >
+                                {original.receipt_number}
+                              </Link>
+                            </div>
                           )}
                         </div>
-                        {payment.receiver && (
-                          <div>{payment.receiver.full_name}</div>
-                        )}
-                      </div>
-                    </li>
-                  ))}
+                        <div className="shrink-0 space-y-1 text-right text-xs text-muted-foreground">
+                          <div>
+                            {new Date(payment.created_at).toLocaleDateString(
+                              "en-NG",
+                              {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              },
+                            )}
+                          </div>
+                          {payment.receiver && (
+                            <div>{payment.receiver.full_name}</div>
+                          )}
+                          {original && (
+                            <ReprintReceiptButton receiptId={original.id} />
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
 

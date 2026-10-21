@@ -288,6 +288,12 @@
       padding: 0 !important;
     }
 
+    /* Same for the receipt sheet: A4, margins from @page. */
+    .receipt-sheet {
+      max-width: none !important;
+      padding: 0 !important;
+    }
+
     a[href]::after {
       content: "";
     }

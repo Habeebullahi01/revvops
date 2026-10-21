@@ -44,6 +44,10 @@ Four roles exist: **admin**, **manager**, **reception**, **technician**.
 4. **Financial state belongs to the front desk** — admin, manager,
    reception exclusively. Technicians cannot read or write it, on any
    table. [RLS]
+5. **Financial documents are append-only.** A receipt is evidence: it can be
+   issued and reprinted, never edited or deleted, by any role including
+   admin. A correction is a new document, not a change to an old one.
+   [RLS]
 
 ## 3. Job orders — two independent statuses
 
@@ -92,8 +96,14 @@ Invoice-first: the invoice exists before any money moves and before any
 job order exists. [SCHEMA]
 
 - **`invoices`** holds customer, vehicle, complaint, `cost_breakdown`
-  (JSONB labour/parts lines) and `total_amount`. There is deliberately
-  **no technician and no status column** on an invoice. [SCHEMA]
+  (JSONB labour/parts lines), `total_amount`, `billing_type` and `category`.
+  There is deliberately **no technician and no status column** on an invoice.
+  [SCHEMA]
+- **How an invoice is billed and what it is for live on the invoice, not the
+  job order** (0015). `billing_type` ∈ {`upfront`, `instalmental`,
+  `post_service`} and `category` ∈ {`sales`, `maintenance`, `cng`}. A job
+  order *references* them through its invoice; it does not own them. Any
+  billing type may apply to any service. [SCHEMA]
 - An invoice never creates a job order by itself. The only bridge is the
   explicit *Create job order* action on the invoice's detail page, and only
   once **≥ 50% of the invoice total is paid** — enforced in the UI *and* in
@@ -101,13 +111,19 @@ job order exists. [SCHEMA]
 - Payments record against the invoice directly: `payments.invoice_id`,
   with `job_order_id` nullable since 0013, so money can arrive before a
   job order exists. [SCHEMA]
+- **Every payment auto-issues a receipt** the moment it is recorded
+  (`recordPayment`, owner decision D1). The receipt hangs off the invoice
+  (`receipts.invoice_id`); `receipts.job_order_id` is nullable since 0015.
+  Exactly **one original receipt per payment** is enforced by a partial
+  unique index; reprints are extra rows flagged `is_duplicate` pointing at
+  the original, and they never chain (D4). [SCHEMA + APP]
 - An invoice's paid / part paid / unpaid state is **derived on read** from
   the sum of its payments vs `total_amount`; nothing stores it. [APP]
 - Officers only (admin, manager, reception) read or write invoices;
   technicians have no path to them at all. [RLS]
 - Surfaces: `/invoices` (list), `/invoices/new` (form), `/invoices/[id]`
-  (detail: payments + job-order raise). Creating an invoice lands on the
-  detail page.
+  (detail: payments + receipts + job-order raise), `/receipts/[id]` (A4
+  receipt sheet). Creating an invoice lands on the detail page.
 
 ## 4. Data access matrix (as enforced today)
 
@@ -124,12 +140,14 @@ job order exists. [SCHEMA]
 | Service history | RW | RW | RW | INSERT own only |
 | Payments | RW | RW | RW | — |
 | Invoices | RW | RW | RW | — |
-| Receipts | RW + reprint | RW + reprint | R + issue (non-dup) | — |
+| Receipts | R + issue | R + issue | R + issue | — |
 | Document counters (RPC) | ✓ | ✓ | ✓ | — |
 | Audit log | RW | R | — | own-entry insert only² |
 | Profiles | RW (manage) | R + own name | R + own name | R + own name |
 
-¹ `billing_type`, `estimated_amount`, `actual_amount`, `financial_status`.
+¹ `billing_type` is no longer a job-order column (0015 — it lives on the
+invoice); the financial columns on `job_orders` are `estimated_amount`,
+`actual_amount`, `financial_status`.
 ² Defense-in-depth only; app writes audit entries server-side (§7).
 
 Notes:
@@ -138,8 +156,12 @@ Notes:
   contains no financial columns *by construction*. RLS is row-level, not
   column-level, so technicians get **zero rows** on the real `job_orders`
   table (suite T01) — the view is the only door.
-- Receipts are append-only documents: issued and reprinted, never edited
-  (see §8.3 for one open edge).
+- **Receipts are append-only for every role, including admin** (0015). There
+  is a SELECT policy and an INSERT policy and *no* UPDATE or DELETE policy
+  for anyone — under RLS, an absent policy denies. The INSERT policy allows a
+  duplicate only when it points at an original (`original_receipt_id IS NOT
+  NULL`); issue is no longer gated to reception. Suite R04/R05/R05b/R05c/R06
+  pin these.
 
 ## 5. The technician's view: the vehicle lens
 
@@ -190,10 +212,11 @@ technicians get their own non-financial route(s) in Phase 1.
    payment recording (Phase 2) and invoicing land, decide whether
    `financial_status` should be derived from payment totals, and which
    invoice states join the value set.
-3. **Receipt immutability edge** — admin/manager currently hold FOR ALL on
-   receipts (theoretically able to UPDATE/DELETE; only reception is
-   suite-tested as immutable). Decide whether receipts become append-only
-   for *everyone*.
+3. ~~**Receipt immutability edge**~~ — **RESOLVED 2026-10-21 (0015).** Receipts
+   are now append-only for *everyone*: SELECT + INSERT policies only, no
+   UPDATE/DELETE policy for any role. Verified against the live project for
+   admin, manager and reception (no UPDATE mutated a row, no DELETE removed
+   one) and pinned in the suite (R06, R06b).
 4. **PRD v1.0 is not in the repo** — paste it into `docs/` so this document
    can be diffed against it.
 
@@ -204,6 +227,14 @@ technicians get their own non-financial route(s) in Phase 1.
   gain the vehicle lens — vehicles, owners, and ALL job orders without
   financials (migration `0009`). Invoicing deferred. Matrix redefinition
   flagged OPEN.
+- **2026-10-21** — Phase 2: receipts + invoice fields (0015). Receipts usable
+  by invoice-first payments (`invoice_id`, nullable `job_order_id`); receipts
+  made append-only for all roles; one original per payment enforced by a
+  partial unique index; `billing_type` moved to `invoices` (vocabulary
+  upfront / instalmental / post-service) and `invoices.category` added.
+  Slice 4–5: a receipt auto-issues with every payment, the invoice payments
+  list links and reprints it, and `/receipts/[id]` prints an A4 sheet.
+  §4 matrix and §8.3 updated.
 - **2026-10-19** — Security layer shipped: migrations `0004`–`0007`, suite
   at 44 PASS + T17 known issue.
 - **2026-10-19** — Design foundation: framed-sheet direction
@@ -216,6 +247,6 @@ technicians get their own non-financial route(s) in Phase 1.
 |---|---|
 | Business rules | **this file** |
 | Feature scope & phases | PRD v1.0 (not yet committed — §8.4) |
-| Enforcement | `supabase/migrations/` (0001–0009) |
+| Enforcement | `supabase/migrations/` (0001–0015) |
 | Executable access spec | `scripts/rls-test-suite.mjs` |
 | Design system | `.taste-skill/app/direction.json` |

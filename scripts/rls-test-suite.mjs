@@ -129,14 +129,14 @@ async function main() {
 
   const job1Id = await seedOne("job_orders", {
     job_number: "JO-FIXTURE-0001", customer_id: customerId, vehicle_id: vehicleId,
-    billing_type: "upfront", execution_status: "pending", complaint: "Fixture job assigned to technician",
+    execution_status: "pending", complaint: "Fixture job assigned to technician",
     estimated_amount: 100, assigned_technician_id: ids.technician, created_by: ids.admin,
   });
   // Created part-paid: officers may open a job order with partial or no
   // payment (BUSINESS_RULES.md §3.2).
   const job2Id = await seedOne("job_orders", {
     job_number: "JO-FIXTURE-0002", customer_id: customerId, vehicle_id: vehicleId,
-    billing_type: "post_service", execution_status: "pending", financial_status: "part_paid",
+    execution_status: "pending", financial_status: "part_paid",
     complaint: "Fixture job with payment",
     estimated_amount: 500, assigned_technician_id: null, created_by: ids.admin,
   });
@@ -152,6 +152,15 @@ async function main() {
     job_order_id: job2Id, amount: 50, payment_method: "cash", received_by: ids.admin,
   });
   created.payments.push(paymentId);
+
+  // A second payment deliberately left WITHOUT a receipt, so the suite can
+  // check that reception may issue an ORIGINAL against a bare payment (the
+  // invoice-first path) without colliding with the one-original-per-payment
+  // index on `paymentId`.
+  const barePaymentId = await seedOne("payments", {
+    job_order_id: job2Id, amount: 25, payment_method: "transfer", received_by: ids.admin,
+  });
+  created.payments.push(barePaymentId);
 
   const fixtureReceiptId = await seedOne("receipts", {
     receipt_number: "RCP-FIXTURE-0001", payment_id: paymentId, job_order_id: job2Id,
@@ -228,7 +237,7 @@ async function main() {
   // the read-back denial is asserted separately below.
   const techJobRow = {
     job_number: `JO-TECH-${Date.now()}`, customer_id: customerId, vehicle_id: vehicleId,
-    billing_type: "upfront", complaint: "created by a technician", created_by: ids.technician,
+    complaint: "created by a technician", created_by: ids.technician,
   };
   r = await rest(tok.technician, "POST", "job_orders", techJobRow);
   check(G, "T13 CAN create a job order (owner decision 0014)", r.status === 201, `status ${r.status}`);
@@ -248,7 +257,7 @@ async function main() {
   // the SELECT policy: a technician asking for the row back is denied.
   r = await rest(tok.technician, "POST", "job_orders", {
     job_number: `JO-TECH-RB-${Date.now()}`, customer_id: customerId, vehicle_id: vehicleId,
-    billing_type: "upfront", complaint: "created by a technician", created_by: ids.technician,
+    complaint: "created by a technician", created_by: ids.technician,
   }, "return=representation");
   check(G, "T13d create+read-back denied by the SELECT policy", r.status === 403, `status ${r.status}`);
   const readBackId = idOf((await svc.get(`job_orders?select=id&job_number=eq.${r.data?.job_number ?? "none"}`)).data);
@@ -349,21 +358,46 @@ async function main() {
   check(R, "R03b CAN update financial_status (officer-only rule)", r.status === 200 && r.data?.length === 1, `status ${r.status}`);
   await svc.patch(`job_orders?id=eq.${job1Id}`, { financial_status: "unpaid" });
 
+  // A receipt hangs off an invoice OR a job order; the invoice-first path is
+  // the one that matters now (0015). Reception issues the ORIGINAL here.
   r = await rest(tok.reception, "POST", "receipts", {
-    receipt_number: `RCP-FIXTURE-R-${Date.now()}`, payment_id: paymentId, job_order_id: job2Id,
-    amount: 50, printed_by: ids.reception, is_duplicate: false,
+    receipt_number: `RCP-FIXTURE-R-${Date.now()}`, payment_id: barePaymentId, job_order_id: job2Id,
+    amount: 25, printed_by: ids.reception, is_duplicate: false,
   }, "return=representation");
   if (idOf(r.data)) created.receipts.push(idOf(r.data));
-  check(R, "R04 CAN issue a new receipt", r.status === 201, `status ${r.status}`);
+  check(R, "R04 CAN issue an original receipt for a bare payment", r.status === 201, `status ${r.status}`);
 
+  // Exactly one original per payment (0015 partial unique index). A second
+  // original on the same payment is refused 409 / 23505.
+  r = await rest(tok.reception, "POST", "receipts", {
+    receipt_number: `RCP-FIXTURE-SECOND-${Date.now()}`, payment_id: barePaymentId, job_order_id: job2Id,
+    amount: 25, printed_by: ids.reception, is_duplicate: false,
+  });
+  check(R, "R05 a second ORIGINAL on one payment is refused", r.status >= 400, `status ${r.status}`);
+
+  // A duplicate is a photocopy, not an edit: 0015 deliberately ALLOWS a
+  // reprint as a new immutable row. What it forbids is an orphan — a
+  // duplicate that points at no original.
   r = await rest(tok.reception, "POST", "receipts", {
     receipt_number: `RCP-FIXTURE-DUP-${Date.now()}`, payment_id: paymentId, job_order_id: job2Id,
     amount: 50, printed_by: ids.reception, is_duplicate: true, original_receipt_id: fixtureReceiptId,
+  }, "return=representation");
+  if (idOf(r.data)) created.receipts.push(idOf(r.data));
+  check(R, "R05b CAN reprint (duplicate pointing at the original)", r.status === 201, `status ${r.status}`);
+
+  r = await rest(tok.reception, "POST", "receipts", {
+    receipt_number: `RCP-FIXTURE-ORPHAN-${Date.now()}`, payment_id: paymentId, job_order_id: job2Id,
+    amount: 50, printed_by: ids.reception, is_duplicate: true,
   });
-  check(R, "R05 CANNOT create duplicate/reprint receipt", r.status >= 400, `status ${r.status}`);
+  check(R, "R05c a duplicate with NO original is refused", r.status >= 400, `status ${r.status}`);
 
   r = await rest(tok.reception, "PATCH", `receipts?id=eq.${fixtureReceiptId}`, { amount: 1 }, "return=representation");
   check(R, "R06 receipts immutable (0 rows)", r.status === 200 && r.data?.length === 0, `rows ${r.data?.length ?? "?"}`);
+
+  // No DELETE policy exists for any role: a receipt can never be removed.
+  r = await rest(tok.reception, "DELETE", `receipts?id=eq.${fixtureReceiptId}`);
+  const stillThere = (await svc.get(`receipts?select=id&id=eq.${fixtureReceiptId}`)).data?.length ?? 0;
+  check(R, "R06b CANNOT delete a receipt", stillThere === 1, `row present: ${stillThere}`);
 
   r = await rest(tok.reception, "GET", "audit_logs?select=id");
   check(R, "R07 CANNOT view audit logs (admin/manager only)", r.status === 200 && r.data.length === 0, `got ${r.data?.length}`);

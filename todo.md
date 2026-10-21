@@ -28,7 +28,7 @@ Working list. Tick things off as they land; keep the reasons short.
 - Repair `scripts/rls-test-suite.mjs` and get it green (0010 on disk matches the applied columns).
 - Role/privilege matrix redefinition (BUSINESS_RULES §8) — OPEN.
 - Invoice state machine: draft/issued — OPEN (schema has no `status` column today).
-- Receipts: one per payment, reprint must not duplicate (Phase 2).
+- Receipts: one per payment, reprint must not duplicate (Phase 2) — **done**, see the Phase 2 section.
 
 ## Phase 2 — job orders and receipts
 
@@ -37,6 +37,10 @@ Working list. Tick things off as they land; keep the reasons short.
 - [x] **Officer actions** — `updateJobOrderExecutionStatus`, `assignJobOrder`, `updateJobOrder`; all officers-only and audited; officer status moves are audited, never written as job-log rows.
 - [x] **Job card** — the sheet printed and left inside the vehicle. Carries owner name + phone, vehicle details, the invoice's work-item **descriptions only**, and a QR code that decodes to this job order's absolute URL. **No money, no timeline, no technician commentary.** Rendered on the job order detail page, hidden on screen and revealed by `@media print`, so printing needs no extra navigation; prints alone on A4.
 - [x] **`scripts/job-card-check.mjs`** — 32 checks: content, the absence of money/internals, QR decode, emulated print media (card revealed; screen UI, sidebar and header hidden), print CSS (`@page` A4, shell hidden, card unframed), and no 390px overflow.
+- [x] **Receipts (slice 4)** — every payment auto-issues a receipt inside `recordPayment` (gapless `RCP-YYYY-NNNN`, one *original* per payment enforced by the 0015 index). The invoice's payments list shows each receipt's number as a link plus a *Reprint* control; `reprintReceipt` writes a new row flagged `is_duplicate` pointing at the original, never chaining. `app/actions/receipt-actions.ts`; `app/(dashboard)/invoices/[id]/reprint-receipt-button.tsx`.
+- [x] **Receipt sheet (slice 5)** — `/receipts/[id]` renders an A4 receipt (workshop, customer, vehicle, invoice, amount, method, reference, invoice total / paid / balance, duplicate watermark when reprinted, signature line). Hidden on screen, revealed by `@media print` — same one-button, no-navigation idiom as the job card. `app/(dashboard)/receipts/[id]/`.
+- [x] **`billing_type` moved to the invoice (code)** — see the DONE entry below; vocabulary centralised in `lib/invoice-vocabulary.ts`.
+- [x] **Invoice category wired** — set on the form, shown on the list and detail header.
 
 ### Print CSS gotchas (each cost us a silent bug)
 
@@ -65,29 +69,27 @@ silently. Ordered by how much they block.
   it optional, and relabel it on the invoice form, the job card and the job facts card.
   Needs a migration to drop `NOT NULL`.
 
-- **`billing_type` belongs on the invoice, not the job order — migration written (0015),
-  code not yet updated.** 0015 adds `invoices.billing_type` (NOT NULL, default `upfront`),
-  backfills from the linked job order (`cng_installment` → `instalmental`), then drops
-  `job_orders.billing_type`. The agreed vocabulary is **upfront**, **instalmental**,
-  **post-service**, and *any* plan may apply to *any* service — the old name implied
-  CNG-only, and the label "CNG instalment" in three places reinforced that. Still to do in
-  code once 0015 is pasted: set `billing_type` on the invoice form instead of at
-  job-order-raise time; show it read-only on `job-facts.tsx` and the card; drop it from
-  `job-order-actions.ts` (`BILLING_TYPES` validation, create + update paths),
-  `job-order-panel.tsx`, and the job-orders list. `BILLING_LABEL` is currently copy-pasted
-  into `job-orders/page.tsx`, `job-facts.tsx` and `card/page.tsx` — the move is the moment
-  to put it in one shared module (the way `status-pill.tsx` holds the execution-status
-  vocabulary). The technician view (`0009`) never exposed `billing_type`, so nothing changes
-  there.
+- **`billing_type` belongs on the invoice, not the job order — DONE (0015 + code).** 0015 adds
+  `invoices.billing_type` (NOT NULL, default `upfront`), backfills from the linked job order
+  (`cng_installment` → `instalmental`), then drops `job_orders.billing_type`. The agreed
+  vocabulary is **upfront**, **instalmental**, **post-service**, and *any* plan may apply to
+  *any* service — the old name implied CNG-only. The vocabulary now lives in one module,
+  `lib/invoice-vocabulary.ts` (`BILLING_TYPES`, `BILLING_OPTIONS`, `billingLabel`), the way
+  `status-pill.tsx` holds the execution-status vocabulary; the three copy-pasted `BILLING_LABEL`
+  maps are gone. The invoice form sets it; the job order reads it through its invoice and shows
+  it read-only on `job-facts.tsx`, the card and the job-orders list (via the embedded
+  `invoices(billing_type)`). Removed from `job-order-actions.ts` (create + update),
+  `job-order-panel.tsx` and the list's row type. The technician view (`0009`) never exposed
+  `billing_type`, so nothing changed there.
 
-- **Invoices need a category — migration written (0015), UI not yet wired.** 0015 adds
-  `invoices.category` (NOT NULL, default `maintenance`, CHECK `sales | maintenance | cng`)
-  plus an index. Still to do: expose it on the invoice form and list, and use it for
-  reporting. **Deferred on purpose:** a true walk-in parts sale is still impossible, because
-  `invoices.customer_id` and `invoices.vehicle_id` remain `NOT NULL` — selling a part to a
-  passer-by needs a nullable vehicle and a way to capture a name/phone inline, which is a
-  UI change of its own. Settle that before building a report that assumes the `sales`
-  category can be populated freely.
+- **Invoices need a category — DONE (0015 + code).** `invoices.category` (NOT NULL, default
+  `maintenance`, CHECK `sales | maintenance | cng`) plus an index. Set on the invoice form,
+  shown on the invoice list and detail header, and selectable from `CATEGORY_OPTIONS` /
+  `CATEGORY_STYLES` in `lib/invoice-vocabulary.ts`. **Still deferred on purpose:** a true
+  walk-in parts sale is impossible, because `invoices.customer_id` and `invoices.vehicle_id`
+  remain `NOT NULL` — selling a part to a passer-by needs a nullable vehicle and inline
+  name/phone capture, which is a UI change of its own. Settle that before building a report
+  that assumes the `sales` category can be populated freely.
 
 - **Print the job card from the job order detail page — DONE.** The separate
   `/job-orders/[id]/card` route is gone. The card is now a presentational component
