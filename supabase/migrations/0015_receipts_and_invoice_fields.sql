@@ -190,3 +190,23 @@ SELECT category, count(*) FROM invoices GROUP BY category ORDER BY category;
 
 -- Make PostgREST re-read the schema (new/changed columns and policies)
 NOTIFY pgrst, 'reload schema';
+
+-- ============================================
+-- VERIFIED 2026-10-21 against the live project. What was actually exercised,
+-- and how, so a re-run can be trusted:
+--
+--   * one original per payment — a second original insert as reception
+--     returns 409 / 23505 (unique violation). A duplicate with
+--     original_receipt_id set is accepted.
+--   * a duplicate WITHOUT original_receipt_id is refused 403 / 42501 by the
+--     INSERT policy's WITH CHECK.
+--   * receipts are append-only — admin, manager and reception can neither
+--     UPDATE nor DELETE a row.
+--
+-- TESTING TRAPS (both caused a false result first time round):
+--   1. Do not test these policies with the service-role key: it BYPASSES RLS,
+--      so every policy looks absent. Use a real signed-in user's token.
+--   2. PostgREST answers 200 with an EMPTY ARRAY when RLS filters out every
+--      row, so a status code alone cannot tell "denied" from "no-op". Read the
+--      row back (with the service role) and compare values instead.
+-- ============================================

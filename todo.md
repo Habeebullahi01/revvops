@@ -45,11 +45,11 @@ Working list. Tick things off as they land; keep the reasons short.
 
 ### Open in Phase 2
 
-- **`supabase/migrations/0015_receipts_and_invoice_fields.sql` needs pasting.** It carries
-  three groups of change (receipts usable by invoice-first payments, `billing_type` moved to
-  invoices, invoice `category`). Until it is applied, `receipts.job_order_id` is `NOT NULL`
-  and there is no `receipts.invoice_id`, so no receipt can be issued for an invoice payment,
-  and the code must not yet assume `invoices.billing_type` / `invoices.category` exist.
+- **`supabase/migrations/0015_receipts_and_invoice_fields.sql` — APPLIED and verified 2026-10-21.** Receipts usable by invoice-first payments, `billing_type` moved to invoices, invoice `category`. Verified against the live project: backfill preserved every existing value (`post_service`/`upfront` inherited, 1 defaulted to `upfront`); `job_orders.billing_type` is gone; one original receipt per payment is enforced (409/23505); a duplicate without an original is refused (403/42501); and receipts are append-only for admin, manager *and* reception.
+
+  Two testing traps, recorded because both produced a wrong answer first:
+  1. Testing these policies with the **service-role key proves nothing** — it bypasses RLS, so every policy looks missing. Use a real user token.
+  2. PostgREST returns **200 with an empty array** when RLS filters every row, so a status code cannot distinguish "denied" from "no-op". Read the row back and compare.
 
 ## Model corrections — raised 2026-10-21
 
