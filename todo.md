@@ -25,7 +25,7 @@ Working list. Tick things off as they land; keep the reasons short.
 
 - **VIN** — `vehicles.vin` already exists (0001) and is searched/edited today; decide whether to surface it on the invoice form and in the vehicle cards.
 - `job_orders_tech_view` verified after 0014: technicians still see every job's execution fields and still get zero rows (and zero updates) on `job_orders` itself.
-- Repair `scripts/rls-test-suite.mjs` and get it green (0010 on disk matches the applied columns).
+- Repair `scripts/rls-test-suite.mjs` — **done**, and extended. The suite is green at **56/57** (T17 remains the one tracked API-layer anomaly), up from 54/55. Added admin receipt-immutability cases (A03/A03b): receipts are append-only for admin too, so admin's blanket access is not a back door.
 - Role/privilege matrix redefinition (BUSINESS_RULES §8) — OPEN.
 - Invoice state machine: draft/issued — OPEN (schema has no `status` column today).
 - Receipts: one per payment, reprint must not duplicate (Phase 2) — **done**, see the Phase 2 section.
@@ -41,6 +41,7 @@ Working list. Tick things off as they land; keep the reasons short.
 - [x] **Receipt sheet (slice 5)** — `/receipts/[id]` renders an A4 receipt (workshop, customer, vehicle, invoice, amount, method, reference, invoice total / paid / balance, duplicate watermark when reprinted, signature line). Hidden on screen, revealed by `@media print` — same one-button, no-navigation idiom as the job card. `app/(dashboard)/receipts/[id]/`.
 - [x] **`billing_type` moved to the invoice (code)** — see the DONE entry below; vocabulary centralised in `lib/invoice-vocabulary.ts`.
 - [x] **Invoice category wired** — set on the form, shown on the list and detail header.
+- [x] **`scripts/job-order-flow-check.mjs` (slice 6)** — 53 checks driving the whole Phase 2 surface end to end: list search (job number, complaint) + filter chips, row → detail, officer status change (persisted + audited with `source=officer` + `from`/`to`, and *not* a job-log row), the merged timeline's officer entry, technician assignment (persisted + audited), recording a payment **through the invoice form** so the receipt is genuinely issued by `recordPayment`, the original receipt's number shape, the A4 receipt sheet (carries money, hidden on screen), reprint → a duplicate with its own number pointing at the original, anon cannot UPDATE a receipt, and print media revealing the card with no money. Every DB assertion waits for the *effect* (`waitFor`) rather than sleeping a fixed time, and there is no 390px horizontal overflow on any page it visits.
 
 ### Print CSS gotchas (each cost us a silent bug)
 
@@ -54,6 +55,12 @@ Working list. Tick things off as they land; keep the reasons short.
   Two testing traps, recorded because both produced a wrong answer first:
   1. Testing these policies with the **service-role key proves nothing** — it bypasses RLS, so every policy looks missing. Use a real user token.
   2. PostgREST returns **200 with an empty array** when RLS filters every row, so a status code cannot distinguish "denied" from "no-op". Read the row back and compare.
+
+  A third trap, found while building `job-order-flow-check.mjs`: **a PostgREST filter value
+  containing a dot is parsed as a separator.** `action=eq.job_order.execution_status_changed`
+  combined with another `eq=` filter silently matched the wrong rows and reported "0 audit
+  rows" for an audit row that existed. Filter on one documented column (`entity_id`) and match
+  the dotted value in JS.
 
 ## Model corrections — raised 2026-10-21
 
@@ -112,11 +119,38 @@ silently. Ordered by how much they block.
   forgotten. Decide whether proof is *required* to save a payment or merely *encouraged*,
   because "required" changes `recordPayment`'s signature and every caller.
 
-- **Cost-breakdown lines are not all "work to be done".** A line is already typed
-  `labor | part` (`invoice-actions.ts`, `invoice-form.tsx`, the invoice detail page), but
-  the job card flattens both into one "Work to be done" list — so a part reads as a task.
-  Split them on the card and the job order: **Parts** (fitted/replaced items) and **Work to
-  be done** (the labour lines). The data is already there; this is presentation, so it can
-  land with the next card change rather than needing a migration.
+- **`actual_amount` never lives on the invoice — recorded deviation from D4.** D4 said the
+  invoice would carry an `actual_amount`; it does not, and none will be added. The
+  invoice→job-order hand-off sets the job order's `estimated_amount` to the invoice
+  `total_amount` and leaves `actual_amount` null; the real figure is settled later by an
+  officer via `updateJobOrder`. Recorded in `BUSINESS_RULES.md` §3.3 so the invoice is not
+  mistaken for an actual-cost store.
+
+- **Cost-breakdown lines are not all "work to be done" — DONE.** A line was already typed
+  `labor | part` (`invoice-actions.ts`, `invoice-form.tsx`, the invoice detail page), but the
+  job card flattened both into one "Work to be done" list, so a part read as a task. The card
+  now renders **Parts** (items fitted/replaced) and **Work to be done** (labour) as separate
+  sections, in that order, via a shared `WorkItemList` helper. A line with no recorded
+  `itemType` falls to labour — the old card's reading — because defaulting an unknown line to
+  "part" would tell a technician to fit something that may not exist.
+  `scripts/job-card-check.mjs` gained 6 assertions (38 total) pinning the split, read from the
+  DOM rather than `innerText` (the card is `hidden print:block`, so `innerText` collapses the
+  whole sheet to one line on screen).
+
+- **Print must render light even on a dark screen — DONE (dark mode).** The print token
+  overrides lost to the `.dark` block. The cause was **cascade layers, not specificity**:
+  Tailwind hoists `@layer base` to the top of the bundle, and the real `.dark` block is emitted
+  in a later layer, so a more specific selector in an earlier layer still lost. Selector tricks
+  could not win *and* did not survive minification (Lightning CSS collapses `:root:root.dark`
+  to `.dark`). Fixed by writing `data-theme` alongside the class in `theme-provider.tsx` and
+  targeting `html[data-theme="dark"]` in print with `!important` on the token declarations —
+  the one thing layer order cannot override. `scripts/dark-mode-check.mjs` is now **33/33**.
+
+- **Flow-check housekeeping is one module — DONE (slice 6).** `scripts/lib/flow-cleanup.mjs`
+  holds the child-first delete order (receipts → payments → invoices → job orders → service
+  history → job logs → vehicles → customer → audit) and the `KEEP_TEST_DATA` / `--purge`
+  behaviour, shared by all three flow checks. It fixes two latent leaks the two older copies
+  had: `job-card-check.mjs` deleted invoices by id and skipped receipts entirely;
+  `invoice-flow-check.mjs` never deleted `job_logs`.
 
 

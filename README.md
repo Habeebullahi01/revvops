@@ -33,6 +33,9 @@ shadcn/ui · Supabase (Postgres, RLS, Auth)
 | `node --env-file=.env.local scripts/rls-test-suite.mjs` | PRD §13 access-control suite — must exit 0 |
 | `CHROME_PATH=<chrome> node --env-file=.env.local scripts/design-preview.mjs --who admin` | per-role screenshots + numeric design gate |
 | `CHROME_PATH=<chrome> node --env-file=.env.local scripts/invoice-flow-check.mjs` | invoice → payment → job-order end-to-end gate; deletes its own test rows (`--purge` clears older runs, `KEEP_TEST_DATA=1` keeps them) |
+| `CHROME_PATH=<chrome> node --env-file=.env.local scripts/job-order-flow-check.mjs` | Phase 2 gate: job-order list/search/filters, detail, officer status + assignment, timeline, payment → receipt, reprint, print card; same cleanup flags |
+| `CHROME_PATH=<chrome> node --env-file=.env.local scripts/job-card-check.mjs` | printable job-card gate (content, parts/labour split, no money, QR decode, print media); same cleanup flags |
+| `CHROME_PATH=<chrome> node --env-file=.env.local scripts/dark-mode-check.mjs` | dark-mode gate (tokens, persistence, print stays light, 390px overflow) |
 
 ## Layout
 
@@ -41,6 +44,6 @@ app/                  routes: (auth) login, (dashboard) role-gated screens
 components/           app shell (L-frame) + shadcn/ui primitives
 lib/                  auth/session, Supabase clients
 supabase/migrations/  schema, functions, RLS — the enforcement layer
-scripts/              health check, RLS suite, design preview gate
+scripts/              health check, RLS suite, flow + card + dark-mode gates, shared flow-cleanup lib
 .taste-skill/         dealt design direction + generated previews
 ```

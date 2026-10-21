@@ -108,6 +108,14 @@ job order exists. [SCHEMA]
   explicit *Create job order* action on the invoice's detail page, and only
   once **≥ 50% of the invoice total is paid** — enforced in the UI *and* in
   `createJobOrderFromInvoice` (lib/invoice-rules.ts). [APP]
+- **The hand-off seeds `estimated_amount`, not `actual_amount`.** Owner
+  decision D4 originally said the invoice would carry an `actual_amount`; it
+  does not, and none will be added. `createJobOrderFromInvoice` sets the job
+  order's `estimated_amount` to the invoice `total_amount` and leaves
+  `actual_amount` null. The figure is only settled later, by an officer
+  editing the job order (`updateJobOrder`). This is a deliberate deviation
+  from D4, recorded here so the invoice is not mistaken for an
+  actual-cost store. [APP]
 - Payments record against the invoice directly: `payments.invoice_id`,
   with `job_order_id` nullable since 0013, so money can arrive before a
   job order exists. [SCHEMA]
@@ -160,8 +168,10 @@ Notes:
   is a SELECT policy and an INSERT policy and *no* UPDATE or DELETE policy
   for anyone — under RLS, an absent policy denies. The INSERT policy allows a
   duplicate only when it points at an original (`original_receipt_id IS NOT
-  NULL`); issue is no longer gated to reception. Suite R04/R05/R05b/R05c/R06
-  pin these.
+  NULL`); issue is no longer gated to reception. Suite
+  R04/R05/R05b/R05c/R06/R06b pin reception, and A03/A03b pin that admin's
+  blanket "full access" is not a back door to editing or erasing a money
+  document.
 
 ## 5. The technician's view: the vehicle lens
 
@@ -216,7 +226,8 @@ technicians get their own non-financial route(s) in Phase 1.
    are now append-only for *everyone*: SELECT + INSERT policies only, no
    UPDATE/DELETE policy for any role. Verified against the live project for
    admin, manager and reception (no UPDATE mutated a row, no DELETE removed
-   one) and pinned in the suite (R06, R06b).
+   one) and pinned in the suite (R06, R06b for reception; A03, A03b for
+   admin).
 4. **PRD v1.0 is not in the repo** — paste it into `docs/` so this document
    can be diffed against it.
 
@@ -235,6 +246,15 @@ technicians get their own non-financial route(s) in Phase 1.
   Slice 4–5: a receipt auto-issues with every payment, the invoice payments
   list links and reprints it, and `/receipts/[id]` prints an A4 sheet.
   §4 matrix and §8.3 updated.
+- **2026-10-21** — Phase 2 slices 4–6 verified and closed. The job card now
+  splits parts from labour (it previously flattened a part into "work to
+  be done", telling a technician to *do* a part rather than fit it).
+  Print now forces light tokens even on a dark screen. Access suite extended
+  to 56/57 with admin receipt-immutability cases (A03/A03b); a new
+  `scripts/job-order-flow-check.mjs` drives the whole surface end to end,
+  and the cleanup housekeeping the flow checks share is now one module
+  (`scripts/lib/flow-cleanup.mjs`). The D4 deviation on `actual_amount` is
+  recorded in §3.3.
 - **2026-10-19** — Security layer shipped: migrations `0004`–`0007`, suite
   at 44 PASS + T17 known issue.
 - **2026-10-19** — Design foundation: framed-sheet direction

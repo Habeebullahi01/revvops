@@ -331,82 +331,96 @@
      * every var-driven colour (including `border-rule`, the pills and the status
      * solids) resolves to its light value for the print render.
      *
-     * Ordering matters here and bit this once: Tailwind hoists `@layer base`
-     * contents near the top of the emitted file, so this block lands *before*
-     * the real `:root` and `.dark` blocks. At equal specificity `.dark` would
-     * win and print would stay dark. `:root:root` (0,2,0) outranks `.dark`
-     * (0,1,0) whatever the order, without resorting to `!important` on 50 vars.
-     * It selects the same element — <html> — and only inside this media query.
+     * Two things make this hard, and both cost a silent bug to learn:
+     *
+     *  - ORDER. Tailwind hoists `@layer base` near the top of the emitted file,
+     *    so this block lands *before* the real `:root` and `.dark` blocks.
+     *  - LAYERS, which is the one that actually decides it. The real `.dark`
+     *    block is emitted in a later cascade layer than `base`, and layer order
+     *    beats specificity outright — a more specific selector in an earlier
+     *    layer still loses. So raising specificity cannot fix this, and the
+     *    selector experiments that tried (see below) all failed for this reason.
+     *    `!important` is the one thing layer order cannot override, so the
+     *    declarations below carry it. That is the deliberate cost of printing
+     *    light from a dark screen.
+     *
+     * The selector still has to *match*, and it has to survive minification:
+     * Lightning CSS rewrites `:root:root.dark` down to `.dark`, silently
+     * discarding the specificity boost. `html[data-theme="dark"]` is stable
+     * through the build and matches the attribute the theme provider writes
+     * alongside the class, so it needs no guessing about which class is on
+     * <html>.
      */
-    :root:root {
-      color-scheme: light;
+    :root {
+      color-scheme: light !important;
     }
-    :root:root.dark {
-      --background: #ffffff;
-      --foreground: #131416;
-      --card: #ffffff;
-      --card-foreground: #131416;
-      --popover: #ffffff;
-      --popover-foreground: #131416;
-      --primary: #1b6c80;
-      --primary-foreground: #ffffff;
-      --secondary: #f4f6f8;
-      --secondary-foreground: #131416;
-      --muted: #f4f6f8;
-      --muted-foreground: #5d5f60;
-      --accent: #ebedee;
-      --accent-foreground: #131416;
-      --destructive: #c4242a;
-      --border: #e8eaec;
-      --input: #e8eaec;
-      --ring: #1b6c80;
+    html[data-theme="dark"] {
+      color-scheme: light !important;
+      --background: #ffffff !important;
+      --foreground: #131416 !important;
+      --card: #ffffff !important;
+      --card-foreground: #131416 !important;
+      --popover: #ffffff !important;
+      --popover-foreground: #131416 !important;
+      --primary: #1b6c80 !important;
+      --primary-foreground: #ffffff !important;
+      --secondary: #f4f6f8 !important;
+      --secondary-foreground: #131416 !important;
+      --muted: #f4f6f8 !important;
+      --muted-foreground: #5d5f60 !important;
+      --accent: #ebedee !important;
+      --accent-foreground: #131416 !important;
+      --destructive: #c4242a !important;
+      --border: #e8eaec !important;
+      --input: #e8eaec !important;
+      --ring: #1b6c80 !important;
 
-      --ground: #ffffff;
-      --surface: #ffffff;
-      --raised: #f4f6f8;
-      --active: #ebedee;
-      --rule: #f0f1f2;
-      --control: #cdced1;
-      --text: #131416;
-      --ink-muted: #5d5f60;
-      --brand: #1b6c80;
-      --positive: #1e7b4f;
-      --negative: #c4242a;
-      --warning: #92400e;
-      --chart-1: #1b6c80;
-      --chart-2: #2f70bb;
-      --chart-3: #a86f0c;
-      --chart-4: #5d5f60;
-      --chart-5: #8a8d90;
+      --ground: #ffffff !important;
+      --surface: #ffffff !important;
+      --raised: #f4f6f8 !important;
+      --active: #ebedee !important;
+      --rule: #f0f1f2 !important;
+      --control: #cdced1 !important;
+      --text: #131416 !important;
+      --ink-muted: #5d5f60 !important;
+      --brand: #1b6c80 !important;
+      --positive: #1e7b4f !important;
+      --negative: #c4242a !important;
+      --warning: #92400e !important;
+      --chart-1: #1b6c80 !important;
+      --chart-2: #2f70bb !important;
+      --chart-3: #a86f0c !important;
+      --chart-4: #5d5f60 !important;
+      --chart-5: #8a8d90 !important;
 
-      --pill-positive-bg: #dcfae5;
-      --pill-positive-ink: #04250e;
-      --pill-negative-bg: #ffedea;
-      --pill-negative-ink: #831c1e;
-      --pill-warning-bg: #fffbeb;
-      --pill-warning-ink: #92400e;
-      --pill-neutral-bg: #ebedee;
-      --pill-neutral-ink: #353736;
-      --pill-progress-bg: #e3f1f4;
-      --pill-progress-ink: #124956;
+      --pill-positive-bg: #dcfae5 !important;
+      --pill-positive-ink: #04250e !important;
+      --pill-negative-bg: #ffedea !important;
+      --pill-negative-ink: #831c1e !important;
+      --pill-warning-bg: #fffbeb !important;
+      --pill-warning-ink: #92400e !important;
+      --pill-neutral-bg: #ebedee !important;
+      --pill-neutral-ink: #353736 !important;
+      --pill-progress-bg: #e3f1f4 !important;
+      --pill-progress-ink: #124956 !important;
 
-      --status-pending: #767879;
-      --status-in-progress: #1b6c80;
-      --status-waiting-parts: #a86f0c;
-      --status-completed: #1e7b4f;
-      --status-cancelled: #c4242a;
-      --status-unpaid: #767879;
-      --status-part-paid: #a86f0c;
-      --status-paid: #1e7b4f;
+      --status-pending: #767879 !important;
+      --status-in-progress: #1b6c80 !important;
+      --status-waiting-parts: #a86f0c !important;
+      --status-completed: #1e7b4f !important;
+      --status-cancelled: #c4242a !important;
+      --status-unpaid: #767879 !important;
+      --status-part-paid: #a86f0c !important;
+      --status-paid: #1e7b4f !important;
 
-      --sidebar: #ffffff;
-      --sidebar-foreground: #131416;
-      --sidebar-primary: #1b6c80;
-      --sidebar-primary-foreground: #ffffff;
-      --sidebar-accent: #ebedee;
-      --sidebar-accent-foreground: #131416;
-      --sidebar-border: transparent;
-      --sidebar-ring: #1b6c80;
+      --sidebar: #ffffff !important;
+      --sidebar-foreground: #131416 !important;
+      --sidebar-primary: #1b6c80 !important;
+      --sidebar-primary-foreground: #ffffff !important;
+      --sidebar-accent: #ebedee !important;
+      --sidebar-accent-foreground: #131416 !important;
+      --sidebar-border: transparent !important;
+      --sidebar-ring: #1b6c80 !important;
     }
 
     aside,

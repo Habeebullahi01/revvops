@@ -445,6 +445,18 @@ async function main() {
   check(A, "A02 CAN manage profiles", r.status === 200 && r.data?.length === 1, `status ${r.status}`);
   await svc.patch(`profiles?id=eq.${ids.manager}`, { phone: null });
 
+  // Receipts are append-only for EVERYONE, admin included (0015 decision):
+  // the table has SELECT and INSERT policies only, deliberately no UPDATE or
+  // DELETE policy for any role. Admin's blanket "full access" must not become
+  // a back door that erases a money document, so assert it here rather than
+  // trusting the absence of a policy.
+  r = await rest(tok.admin, "PATCH", `receipts?id=eq.${fixtureReceiptId}`, { amount: 1 }, "return=representation");
+  check(A, "A03 admin CANNOT update a receipt (0 rows)",
+    r.status === 200 && r.data?.length === 0, `status ${r.status}, rows ${r.data?.length ?? "?"}`);
+  r = await rest(tok.admin, "DELETE", `receipts?id=eq.${fixtureReceiptId}`);
+  const adminStillThere = (await svc.get(`receipts?select=id&id=eq.${fixtureReceiptId}`)).data?.length ?? 0;
+  check(A, "A03b admin CANNOT delete a receipt", adminStillThere === 1, `row present: ${adminStillThere}`);
+
   // ============================================================
   // NUMBERING — gapless sequence (PRD §10.1)
   // ============================================================

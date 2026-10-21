@@ -8,7 +8,12 @@ import { billingLabel } from "@/lib/invoice-vocabulary";
  * Deliberately says nothing about money: a card taped to a windscreen is
  * readable by anyone walking past. It carries the owner's name and phone so
  * staff can reach them, the vehicle identification, what the customer
- * reported, and the work items — descriptions only, no prices.
+ * reported, and the itemised work — descriptions only, no prices.
+ *
+ * The cost lines are split by `itemType`: a part that is fitted is not a task,
+ * so reading "Replace filter" under "Work to be done" would tell a technician
+ * to perform it rather than fit it. Parts and labour get their own lists, in
+ * that order — a technician wants to know what goes on the vehicle first.
  *
  * The timeline is omitted too. A technician's running commentary is not
  * something the customer should read off a card in their own car.
@@ -58,6 +63,41 @@ const shortDate = (value: string | null) =>
       })
     : "—";
 
+/**
+ * One bulleted list of descriptions. Shared by the parts and labour sections so
+ * the two cannot drift apart visually, and so the empty-state wording stays in
+ * one place.
+ */
+function WorkItemList({
+  title,
+  hint,
+  lines,
+}: {
+  title: string;
+  hint: string;
+  lines: CardCostLine[];
+}) {
+  if (lines.length === 0) return null;
+  return (
+    <section className="space-y-2 border-b border-rule py-4">
+      <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {title}
+      </h2>
+      <ul className="space-y-1.5 text-sm">
+        {lines.map((line, index) => (
+          <li key={`${line.description}-${index}`} className="flex gap-2">
+            <span aria-hidden className="text-muted-foreground">
+              •
+            </span>
+            <span>{line.description}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">{hint}</p>
+    </section>
+  );
+}
+
 export function JobCard({
   job,
   lines,
@@ -69,6 +109,12 @@ export function JobCard({
   jobUrl: string;
   qrSvg: string;
 }) {
+  // A line with no recorded type stays under labour: that is what the card
+  // always showed, and defaulting an unknown line to "part" would tell a
+  // technician to fit something that may not exist.
+  const parts = lines.filter((line) => line.itemType === "part");
+  const labour = lines.filter((line) => line.itemType !== "part");
+
   return (
     <article
       aria-label={`Job card ${job.job_number}`}
@@ -153,27 +199,30 @@ export function JobCard({
         <p className="text-sm whitespace-pre-wrap">{job.complaint}</p>
       </section>
 
-      <section className="space-y-2 border-b border-rule py-4">
-        <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          Work to be done
-        </h2>
-        {lines.length === 0 ? (
+      {lines.length === 0 ? (
+        <section className="space-y-2 border-b border-rule py-4">
+          <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Work to be done
+          </h2>
           <p className="text-sm text-muted-foreground">
             No itemised breakdown was recorded — see the job order for details.
           </p>
-        ) : (
-          <ul className="space-y-1.5 text-sm">
-            {lines.map((line, index) => (
-              <li key={`${line.description}-${index}`} className="flex gap-2">
-                <span aria-hidden className="text-muted-foreground">
-                  •
-                </span>
-                <span>{line.description}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        </section>
+      ) : (
+        <>
+          {/* Parts first: what goes onto the vehicle. */}
+          <WorkItemList
+            title="Parts"
+            hint="Items fitted or replaced on this vehicle."
+            lines={parts}
+          />
+          <WorkItemList
+            title="Work to be done"
+            hint="Labour carried out by the workshop."
+            lines={labour}
+          />
+        </>
+      )}
 
       {job.notes && (
         <section className="space-y-2 border-b border-rule py-4">

@@ -178,32 +178,32 @@ new `app/(dashboard)/invoices/[id]/payments-list.tsx`.
 - A reprint is the same route with `?duplicate=1`, which triggers the duplicate
   issue and then renders the new number.
 
-### Slice 6 — access rules, docs and the gate
+### Slice 6 — access rules, docs and the gate — DONE (2026-10-21)
 
 **Files:** `supabase/migrations/0015_receipts.sql` (final form),
 `scripts/rls-test-suite.mjs` (repair + extend), `BUSINESS_RULES.md`,
 `todo.md`, README scripts table, new `scripts/job-order-flow-check.mjs`.
 
-- **Migrate the hand-rolled checks in `invoice-flow-check.mjs` that belong to
-  the access spec** (technician sees nothing on `job_orders`, execution-only
-  view, receipts immutability) into `scripts/rls-test-suite.mjs`, then get
-  that suite green: it is currently red and crashing
-  (`Cannot read properties of undefined (reading 'execution_status')` in
-  T13/T27/T28, plus R03b). Same for the checks in
-  `scripts/invoice-flow-check.mjs` that assert policy shape.
-- New receipts cases in the suite: reception may issue but not mark a
-  duplicate; nobody may UPDATE or DELETE a receipt; a technician gets zero
-  rows on `receipts`.
-- `scripts/job-order-flow-check.mjs`: drives the new surfaces end to end —
-  list filters and search, row → detail, officer status change, assignment,
-  timeline entry appears, print route renders, payment issues a receipt,
-  reprint issues a duplicate with a new number, and no horizontal overflow at
-  390 px on every new page. It cleans up after itself the same way the invoice
-  check now does; factor that cleanup into a shared helper.
-- `BUSINESS_RULES.md`: §3.1 execution-status editing, §3.4 receipts (numbering,
-  duplicate semantics, immutability, invoice link), §4 matrix rows for job
-  orders and receipts as actually enforced, and close §8.3.
-- `todo.md`: Phase 2 list, ticked as it lands.
+**Outcome.** The plan's red-suite premise was **stale**: slice 4–5 had already
+fixed T13/T27/T28 and R03b, and the suite entered this slice green at 54/55.
+So the repair work reduced to the receipts cases. The suite now exits at
+**56/57** (T17 the one tracked anomaly).
+
+- The hand-rolled policy checks the plan named (technician sees nothing on
+  `job_orders`, execution-only view, receipts immutability) were already in the
+  suite as T01/T13*–T14* and R04–R06b; nothing needed migrating. Reception's
+  reprint right (R05b/M02) supersedes the plan's "reception may issue but not
+  mark a duplicate" — the owner decision is that issue is **not** gated to
+  reception and reprints are permitted; the RLS suite pins that instead.
+- **Added** the genuine gap: admin receipt immutability (A03/A03b). Append-only
+  holds for admin too, so a blanket-access role cannot edit or erase a money
+  document.
+- **`scripts/job-order-flow-check.mjs`** — 53 checks driving the whole Phase 2
+  surface, cleaning up after itself. The shared cleanup was factored into
+  **`scripts/lib/flow-cleanup.mjs`** and both older checks now use it.
+- **`BUSINESS_RULES.md`** — §3.3 gained the `actual_amount`-not-on-invoices
+  deviation from D4; §4 receipts note gained the admin cases; §8.3 closed;
+  changelog entry added. **`todo.md`** and the README scripts table updated.
 
 ---
 

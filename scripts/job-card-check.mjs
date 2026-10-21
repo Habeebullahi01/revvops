@@ -18,6 +18,7 @@
 //
 // Prints PASS/FAIL lines and exits non-zero on any FAIL.
 import { Browser, sleep } from "../.agents/skills/design-taste-frontend/scripts/lib/cdp.mjs";
+import { purgeCustomers, canPurge, restGet } from "./lib/flow-cleanup.mjs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -40,46 +41,25 @@ const check = (name, ok, detail = "") => {
 };
 
 const adminHeaders = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
-const restGet = (path) =>
-  fetch(`${URL_}/rest/v1/${path}`, { headers: adminHeaders }).then((r) => r.json());
 const restPost = (table, body) =>
   fetch(`${URL_}/rest/v1/${table}`, {
     method: "POST",
     headers: { ...adminHeaders, "Content-Type": "application/json", Prefer: "return=representation" },
     body: JSON.stringify(body),
   }).then((r) => r.json());
-const restDelete = async (table, filter) => {
-  const res = await fetch(`${URL_}/rest/v1/${table}?${filter}`, {
-    method: "DELETE",
-    headers: { ...adminHeaders, Prefer: "return=minimal" },
-  });
-  return res.ok;
-};
-const idList = (ids) => `(${ids.map((id) => `"${id}"`).join(",")})`;
 
-/** customers.name is unique enough with the stamp; phone doubles as a key. */
+/**
+ * Clear rows left by this and earlier runs. Delegated to the shared helper so
+ * the child-first delete order matches the other flow checks (this one used to
+ * delete invoices by id and skip receipts, which leaked rows).
+ */
 const purge = async () => {
   const customers = await restGet(`customers?select=id&name=like.${TAG}*`);
-  const ids = (customers || []).map((c) => c.id);
-  if (!ids.length) return 0;
-  const invoices = await restGet(`invoices?select=id&customer_id=in.${idList(ids)}`);
-  const jobs = await restGet(`job_orders?select=id&customer_id=in.${idList(ids)}`);
-  const invoiceIds = (invoices || []).map((i) => i.id);
-  const jobIds = (jobs || []).map((j) => j.id);
-  if (invoiceIds.length) await restDelete("payments", `invoice_id=in.${idList(invoiceIds)}`);
-  if (invoiceIds.length) await restDelete("invoices", `id=in.${idList(invoiceIds)}`);
-  if (jobIds.length) {
-    await restDelete("job_logs", `job_order_id=in.${idList(jobIds)}`);
-    await restDelete("service_history", `linked_job_order_id=in.${idList(jobIds)}`);
-    await restDelete("job_orders", `id=in.${idList(jobIds)}`);
-  }
-  await restDelete("vehicles", `customer_id=in.${idList(ids)}`);
-  await restDelete("customers", `id=in.${idList(ids)}`);
-  await restDelete("audit_logs", `entity_id=in.${idList([...ids, ...invoiceIds, ...jobIds])}`);
-  return ids.length;
+  const removed = await purgeCustomers(customers);
+  return removed ? removed.customers : 0;
 };
 
-if (!URL_ || !SERVICE) {
+if (!canPurge()) {
   console.log("NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing.");
   process.exit(1);
 }
@@ -274,6 +254,45 @@ try {
     "Engine oil and filter change",
     "Installation labour",
   ].every((d) => card.includes(d)));
+
+  // ── parts and labour are split, not flattened ──────────────────────────
+  // A part is fitted, a labour line is performed; showing both under one
+  // "Work to be done" heading tells a technician to do a part.
+  //
+  // Read the DOM, not innerText: the card is hidden on screen (`hidden
+  // print:block`), so innerText collapses the whole sheet onto one line.
+  const split = await page.eval(() => {
+    const el = document.querySelector(".job-card");
+    if (!el) return null;
+    const out = {};
+    for (const h of el.querySelectorAll("h2")) {
+      const title = h.textContent.trim();
+      // The section is the heading's parent; its list holds the descriptions.
+      const items = [...h.parentElement.querySelectorAll("li")].map((li) =>
+        li.textContent.replace(/^•/, "").trim(),
+      );
+      out[title] = items;
+    }
+    return out;
+  });
+  const parts = split?.["Parts"] ?? [];
+  const work = split?.["Work to be done"] ?? [];
+  check("card has a Parts section", Array.isArray(split?.["Parts"]));
+  check("card has a Work to be done section", Array.isArray(split?.["Work to be done"]));
+  check("both part lines are under Parts",
+    parts.includes("CNG conversion kit and installation") &&
+    parts.includes("Engine oil and filter change"),
+    JSON.stringify(parts));
+  check("the labour line is under Work to be done",
+    work.includes("Installation labour"), JSON.stringify(work));
+  check("no part line leaked into Work to be done",
+    !work.some((d) => /CNG conversion kit|Engine oil and filter/.test(d)));
+  check("no labour line leaked into Parts",
+    !parts.some((d) => /Installation labour/.test(d)));
+  check("Parts heading precedes Work to be done in the DOM", await page.eval(() => {
+    const hs = [...document.querySelectorAll(".job-card h2")].map((h) => h.textContent.trim());
+    return hs.indexOf("Parts") > -1 && hs.indexOf("Parts") < hs.indexOf("Work to be done");
+  }));
 
   // ── money and internals must not appear ────────────────────────────────
   check("no naira symbol on the card", !card.includes("\u20a6"));

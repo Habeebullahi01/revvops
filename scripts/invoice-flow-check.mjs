@@ -17,6 +17,7 @@
 //
 // Prints PASS/FAIL lines and exits non-zero on any FAIL.
 import { Browser, sleep } from "../.agents/skills/design-taste-frontend/scripts/lib/cdp.mjs";
+import { purgeCustomers, purger, canPurge, restGet } from "./lib/flow-cleanup.mjs";
 
 const BASE = process.env.PREVIEW_URL || "http://localhost:3000";
 const EMAIL = "reception.test@wms.local";
@@ -41,77 +42,9 @@ const check = (name, ok, detail = "") => {
 };
 
 // ---- test-data housekeeping (service role; RLS is bypassed on purpose) ----
-const adminHeaders = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
-
-const restGet = (path) => fetch(`${URL_}/rest/v1/${path}`, { headers: adminHeaders }).then((r) => r.json());
-
-const restDelete = async (table, filter) => {
-  const res = await fetch(`${URL_}/rest/v1/${table}?${filter}`, {
-    method: "DELETE",
-    headers: { ...adminHeaders, Prefer: "return=minimal" },
-  });
-  if (!res.ok) {
-    const body = String(await res.text()).slice(0, 140);
-    console.log(`      could not clear ${table}: ${res.status} ${body}`);
-  }
-  return res.ok;
-};
-
-const idList = (ids) => `(${ids.map((id) => `"${id}"`).join(",")})`;
-
-/**
- * Delete everything belonging to the given customers, children first:
- * receipts → payments → invoices → job orders → vehicles → customer → audit.
- * Vehicles/invoices cascade from the customer, but job orders reference the
- * customer without a cascade, so they go before it.
- */
-async function purgeCustomers(customers) {
-  const ids = (customers || []).map((c) => c.id);
-  if (!ids.length || !URL_ || !SERVICE) return null;
-
-  const vehicles = await restGet(`vehicles?select=id&customer_id=in.${idList(ids)}`);
-  const invoices = await restGet(`invoices?select=id&customer_id=in.${idList(ids)}`);
-  const jobs = await restGet(`job_orders?select=id&customer_id=in.${idList(ids)}`);
-  const vehicleIds = (vehicles || []).map((v) => v.id);
-  const invoiceIds = (invoices || []).map((i) => i.id);
-  const jobIds = (jobs || []).map((j) => j.id);
-
-  const paymentFilter = [
-    invoiceIds.length ? `invoice_id.in.${idList(invoiceIds)}` : null,
-    jobIds.length ? `job_order_id.in.${idList(jobIds)}` : null,
-  ].filter(Boolean);
-
-  if (paymentFilter.length) {
-    const filter = `or=(${paymentFilter.join(",")})`;
-    const pays = await restGet(`payments?select=id&${filter}`);
-    const payIds = (pays || []).map((p) => p.id);
-    if (payIds.length) await restDelete("receipts", `payment_id=in.${idList(payIds)}`);
-    await restDelete("payments", filter);
-  }
-
-  if (invoiceIds.length) await restDelete("invoices", `customer_id=in.${idList(ids)}`);
-  if (jobIds.length) {
-    // No cascade from a job order into service history.
-    await restDelete("service_history", `linked_job_order_id=in.${idList(jobIds)}`);
-    await restDelete("job_orders", `customer_id=in.${idList(ids)}`);
-  }
-  if (vehicleIds.length) await restDelete("vehicles", `customer_id=in.${idList(ids)}`);
-  await restDelete("customers", `id=in.${idList(ids)}`);
-
-  const auditIds = [...ids, ...invoiceIds, ...jobIds, ...vehicleIds];
-  if (auditIds.length) await restDelete("audit_logs", `entity_id=in.${idList(auditIds)}`);
-  for (const id of ids) {
-    await restDelete("audit_logs", `details->>customer_id=eq.${id}`);
-  }
-
-  return {
-    customers: ids.length,
-    vehicles: vehicleIds.length,
-    invoices: invoiceIds.length,
-    jobs: jobIds.length,
-  };
-}
-
+// The child-first delete order is shared with the other flow checks so the
+// three cannot drift — see scripts/lib/flow-cleanup.mjs for why the order is
+// what it is (and which tables have no cascade).
 const testCustomers = async (filter) => {
   const rows = await restGet(`customers?select=id,name,phone&${filter}`);
   return Array.isArray(rows) ? rows : [];
@@ -119,7 +52,7 @@ const testCustomers = async (filter) => {
 
 // ---- --purge: clear rows left by earlier runs, then stop -----------------
 if (PURGE_ONLY) {
-  if (!URL_ || !SERVICE) {
+  if (!canPurge()) {
     console.log("NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing — cannot purge.");
     process.exit(1);
   }
@@ -840,11 +773,11 @@ try {
 
   if (KEEP_DATA) {
     console.log(`\nKEEP_TEST_DATA=1 — left this run's rows in place (phone +1555${stamp}00).`);
-  } else if (URL_ && SERVICE) {
+  } else {
     const customers = await testCustomers(`phone=eq.${encodeURIComponent(`+1555${stamp}00`)}`).catch(
       () => [],
     );
-    const removed = await purgeCustomers(customers).catch((error) => {
+    const removed = await purger()(customers).catch((error) => {
       console.log(`      cleanup failed: ${String(error).slice(0, 160)}`);
       return null;
     });
