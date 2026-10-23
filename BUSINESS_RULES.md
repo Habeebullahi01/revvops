@@ -108,23 +108,23 @@ job order exists. [SCHEMA]
   explicit *Create job order* action on the invoice's detail page, and only
   once **≥ 50% of the invoice total is paid** — enforced in the UI *and* in
   `createJobOrderFromInvoice` (lib/invoice-rules.ts). [APP]
-- **The hand-off seeds `estimated_amount`, not `actual_amount`.** Owner
+- **The hand-off seeds `estimated_amount`, not `actual_amount`.** Phase 2 owner
   decision D4 originally said the invoice would carry an `actual_amount`; it
   does not, and none will be added. `createJobOrderFromInvoice` sets the job
   order's `estimated_amount` to the invoice `total_amount` and leaves
   `actual_amount` null. The figure is only settled later, by an officer
   editing the job order (`updateJobOrder`). This is a deliberate deviation
-  from D4, recorded here so the invoice is not mistaken for an
+  from Phase 2 D4, recorded here so the invoice is not mistaken for an
   actual-cost store. [APP]
 - Payments record against the invoice directly: `payments.invoice_id`,
   with `job_order_id` nullable since 0013, so money can arrive before a
   job order exists. [SCHEMA]
 - **Every payment auto-issues a receipt** the moment it is recorded
-  (`recordPayment`, owner decision D1). The receipt hangs off the invoice
+  (`recordPayment`, Phase 2 decision D1). The receipt hangs off the invoice
   (`receipts.invoice_id`); `receipts.job_order_id` is nullable since 0015.
   Exactly **one original receipt per payment** is enforced by a partial
   unique index; reprints are extra rows flagged `is_duplicate` pointing at
-  the original, and they never chain (D4). [SCHEMA + APP]
+  the original, and they never chain (Phase 2 D4). [SCHEMA + APP]
 - An invoice's paid / part paid / unpaid state is **derived on read** from
   the sum of its payments vs `total_amount`; nothing stores it. [APP]
 - Officers only (admin, manager, reception) read or write invoices;
@@ -253,8 +253,8 @@ technicians get their own non-financial route(s) in Phase 1.
   to 56/57 with admin receipt-immutability cases (A03/A03b); a new
   `scripts/job-order-flow-check.mjs` drives the whole surface end to end,
   and the cleanup housekeeping the flow checks share is now one module
-  (`scripts/lib/flow-cleanup.mjs`). The D4 deviation on `actual_amount` is
-  recorded in §3.3.
+  (`scripts/lib/flow-cleanup.mjs`). The Phase 2 D4 deviation on `actual_amount`
+  is recorded in §3.3.
 - **2026-10-19** — Security layer shipped: migrations `0004`–`0007`, suite
   at 44 PASS + T17 known issue.
 - **2026-10-19** — Design foundation: framed-sheet direction

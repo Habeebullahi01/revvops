@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import type { ActionStatus } from "@/lib/action-result";
 
 /** Statuses a job log may carry (job_logs CHECK, 0008 vocabulary). */
 const TECHNICAL_STATUSES = ["in_progress", "waiting_parts", "completed"] as const;
@@ -19,12 +20,12 @@ export async function logExecutionStatus(input: {
   jobOrderId: string;
   executionStatus: ExecutionStatus;
   notes?: string;
-}) {
+}): Promise<ActionStatus> {
   const { profile } = await requireRole(["technician"]);
 
-  if (!input.jobOrderId) throw new Error("Job order is required");
+  if (!input.jobOrderId) return { ok: false, error: "Job order is required" };
   if (!TECHNICAL_STATUSES.includes(input.executionStatus)) {
-    throw new Error("Unsupported status");
+    return { ok: false, error: "Unsupported status" };
   }
 
   const supabase = await createClient();
@@ -37,9 +38,12 @@ export async function logExecutionStatus(input: {
     .eq("id", input.jobOrderId)
     .single();
 
-  if (jobError) throw new Error("Job order not found");
+  if (jobError) return { ok: false, error: "Job order not found" };
   if (job.assigned_technician_id !== profile.id) {
-    throw new Error("You are not the assigned technician for this job order");
+    return {
+      ok: false,
+      error: "You are not the assigned technician for this job order",
+    };
   }
 
   const { error } = await supabase.from("job_logs").insert({

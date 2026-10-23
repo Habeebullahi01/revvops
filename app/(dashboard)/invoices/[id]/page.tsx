@@ -28,7 +28,7 @@ interface CostLine {
 
 interface InvoiceDetail {
   id: string;
-  complaint: string;
+  complaint: string | null;
   cost_breakdown: CostLine[] | null;
   total_amount: string;
   created_at: string;
@@ -252,10 +252,16 @@ export default async function InvoiceDetailPage({
 
           <Card>
             <CardHeader>
-              <CardTitle>Complaint / work</CardTitle>
+              <CardTitle>Work requested</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm whitespace-pre-wrap">{row.complaint}</p>
+              <p className="text-sm whitespace-pre-wrap">
+                {row.complaint || (
+                  <span className="text-muted-foreground">
+                    Not recorded — no fault or fitment was entered.
+                  </span>
+                )}
+              </p>
             </CardContent>
           </Card>
 

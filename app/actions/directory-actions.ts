@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import {
+  actionFailure,
+  type ActionResult,
+} from "@/lib/action-result";
 
 export interface UpdateCustomerInput {
   id: string;
@@ -64,14 +68,16 @@ function parseIntOrThrow(
 }
 
 /** Inline edit on the customer detail page — officers only (§4). */
-export async function updateCustomer(input: UpdateCustomerInput) {
+export async function updateCustomer(
+  input: UpdateCustomerInput,
+): Promise<ActionResult<{ id: string; name: string }>> {
   const { profile } = await requireRole(["admin", "manager", "reception"]);
 
-  if (!input.id) throw new Error("Customer is required");
+  if (!input.id) return { ok: false, error: "Customer is required" };
   const name = clean(input.name);
   const phone = clean(input.phone);
-  if (!name) throw new Error("Name is required");
-  if (!phone) throw new Error("Phone is required");
+  if (!name) return { ok: false, error: "Name is required" };
+  if (!phone) return { ok: false, error: "Phone is required" };
 
   const supabase = await createClient();
 
@@ -102,23 +108,31 @@ export async function updateCustomer(input: UpdateCustomerInput) {
     details: { name },
   });
 
-  return data;
+  return { ok: true, data: { id: data.id, name: data.name } };
 }
 
 /** Inline edit on the vehicle detail page — officers only (§4). */
-export async function updateVehicle(input: UpdateVehicleInput) {
+export async function updateVehicle(
+  input: UpdateVehicleInput,
+): Promise<ActionResult<{ id: string; license_plate: string }>> {
   const { profile } = await requireRole(["admin", "manager", "reception"]);
 
-  if (!input.id) throw new Error("Vehicle is required");
-  const licensePlate = clean(input.licensePlate);
+  if (!input.id) return { ok: false, error: "Vehicle is required" };
+  const licensePlate = clean(input.licensePlate).toUpperCase();
   const make = clean(input.make);
   const model = clean(input.model);
-  if (!licensePlate) throw new Error("Plate number is required");
-  if (!make) throw new Error("Make is required");
-  if (!model) throw new Error("Model is required");
+  if (!licensePlate) return { ok: false, error: "Plate number is required" };
+  if (!make) return { ok: false, error: "Make is required" };
+  if (!model) return { ok: false, error: "Model is required" };
 
-  const year = parseYear(input.year);
-  const odometer = parseIntOrThrow(input.odometer, "Odometer", 0);
+  let year: number | null;
+  let odometer: number | null;
+  try {
+    year = parseYear(input.year);
+    odometer = parseIntOrThrow(input.odometer, "Odometer", 0);
+  } catch (caught) {
+    return actionFailure(caught, "Invalid vehicle details");
+  }
 
   const supabase = await createClient();
 
@@ -138,7 +152,16 @@ export async function updateVehicle(input: UpdateVehicleInput) {
     .select("id, license_plate")
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    // 23505 = unique_violation: the plate already exists on another vehicle.
+    if (error.code === "23505") {
+      return {
+        ok: false,
+        error: `Plate ${licensePlate} is already registered to another vehicle.`,
+      };
+    }
+    throw new Error(error.message);
+  }
 
   revalidatePath(`/vehicles/${input.id}`);
   revalidatePath("/vehicles");
@@ -151,7 +174,7 @@ export async function updateVehicle(input: UpdateVehicleInput) {
     details: { license_plate: licensePlate },
   });
 
-  return data;
+  return { ok: true, data: { id: data.id, license_plate: data.license_plate } };
 }
 
 /**
@@ -159,19 +182,28 @@ export async function updateVehicle(input: UpdateVehicleInput) {
  * that opens the dialog, so a plate cannot be re-homed by accident.
  * Officers only (§4); plates are unique across the workshop (0001).
  */
-export async function createVehicleForCustomer(input: CreateVehicleInput) {
+export async function createVehicleForCustomer(
+  input: CreateVehicleInput,
+): Promise<ActionResult<{ id: string; license_plate: string }>> {
   const { profile } = await requireRole(["admin", "manager", "reception"]);
 
-  if (!input.customerId) throw new Error("Customer is required");
+  if (!input.customerId) return { ok: false, error: "Customer is required" };
   const licensePlate = clean(input.licensePlate).toUpperCase();
   const make = clean(input.make);
   const model = clean(input.model);
-  if (!licensePlate) throw new Error("Plate number is required");
-  if (!make) throw new Error("Make is required");
-  if (!model) throw new Error("Model is required");
+  if (!licensePlate)
+    return { ok: false, error: "Plate number is required" };
+  if (!make) return { ok: false, error: "Make is required" };
+  if (!model) return { ok: false, error: "Model is required" };
 
-  const year = parseYear(input.year);
-  const odometer = parseIntOrThrow(input.odometer, "Odometer", 0);
+  let year: number | null;
+  let odometer: number | null;
+  try {
+    year = parseYear(input.year);
+    odometer = parseIntOrThrow(input.odometer, "Odometer", 0);
+  } catch (caught) {
+    return actionFailure(caught, "Invalid vehicle details");
+  }
 
   const supabase = await createClient();
 
@@ -193,11 +225,12 @@ export async function createVehicleForCustomer(input: CreateVehicleInput) {
   if (error) {
     // 23505 = unique_violation: the plate already exists somewhere else.
     if (error.code === "23505") {
-      throw new Error(
-        `Plate ${licensePlate} is already registered to another vehicle.`,
-      );
+      return {
+        ok: false,
+        error: `Plate ${licensePlate} is already registered to another vehicle.`,
+      };
     }
-    throw new Error(error.message);
+    return { ok: false, error: error.message };
   }
 
   revalidatePath(`/customers/${input.customerId}`);
@@ -212,5 +245,5 @@ export async function createVehicleForCustomer(input: CreateVehicleInput) {
     details: { license_plate: licensePlate, customer_id: input.customerId },
   });
 
-  return data;
+  return { ok: true, data };
 }

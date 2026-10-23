@@ -12,7 +12,7 @@ export const instant = false;
 interface InvoiceRow {
   id: string;
   total_amount: string;
-  complaint: string;
+  complaint: string | null;
   created_at: string;
   job_order_id: string | null;
   billing_type: string;
@@ -94,7 +94,7 @@ export default async function InvoicesPage() {
         <div className="rounded-lg border border-dashed border-border px-6 py-10 text-center">
           <p className="text-sm font-medium">No invoices yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Raise the first one — customer, vehicle, complaint and the cost
+            Raise the first one — customer, vehicle, work requested and the cost
             breakdown.
           </p>
           <Link
@@ -155,7 +155,7 @@ export default async function InvoicesPage() {
                         {row.customers?.name ?? "—"}
                       </span>
                       <div className="truncate text-xs text-muted-foreground">
-                        {row.complaint}
+                        {row.complaint || "—"}
                       </div>
                     </td>
                     <td className="py-3 pr-4 align-top">

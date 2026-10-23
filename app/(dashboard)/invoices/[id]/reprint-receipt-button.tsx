@@ -22,10 +22,14 @@ export function ReprintReceiptButton({ receiptId }: { receiptId: string }) {
     setBusy(true);
     setError("");
     try {
-      const receipt = await reprintReceipt({ receiptId });
+      const result = await reprintReceipt({ receiptId });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       router.refresh();
       // A reprint exists to be handed over on paper, so open the sheet.
-      window.open(`/receipts/${receipt.id}`, "_blank", "noopener");
+      window.open(`/receipts/${result.data.id}`, "_blank", "noopener");
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Could not reprint.",

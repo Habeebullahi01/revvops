@@ -35,7 +35,7 @@ export interface JobCardData {
   execution_status: string;
   /** Read from the linked invoice (the column moved there in 0015). */
   billing_type: string | null;
-  complaint: string;
+  complaint: string | null;
   date_in: string;
   expected_date_out: string | null;
   notes: string | null;
@@ -194,9 +194,15 @@ export function JobCard({
 
       <section className="space-y-2 border-b border-rule py-4">
         <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          Reported complaint
+          Work requested
         </h2>
-        <p className="text-sm whitespace-pre-wrap">{job.complaint}</p>
+        <p className="text-sm whitespace-pre-wrap">
+          {job.complaint || (
+            <span className="text-muted-foreground">
+              Nothing recorded — see the job order.
+            </span>
+          )}
+        </p>
       </section>
 
       {lines.length === 0 ? (

@@ -28,7 +28,7 @@ export interface ReceiptData {
     id: string;
     code: string;
     total_amount: string;
-    complaint: string;
+    complaint: string | null;
     created_at: string;
     paid_to_date: number;
     balance: number;
@@ -147,7 +147,7 @@ export function ReceiptSheet({ receipt }: { receipt: ReceiptData }) {
           })}
         </p>
         <p className="mt-1 text-sm whitespace-pre-wrap text-muted-foreground">
-          {invoice.complaint}
+          {invoice.complaint || "Not recorded"}
         </p>
       </section>
 

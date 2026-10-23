@@ -42,7 +42,9 @@ export function InlineEditCard({
   description?: string;
   fields: EditableField[];
   values: EditableValues;
-  onSave: (draft: EditableValues) => Promise<unknown>;
+  onSave: (
+    draft: EditableValues,
+  ) => Promise<{ ok: true } | { ok: false; error: string } | void>;
   footer?: React.ReactNode;
   notice?: string;
 }) {
@@ -80,7 +82,11 @@ export function InlineEditCard({
     setSaving(true);
     setError("");
     try {
-      await onSave(draft);
+      const result = await onSave(draft);
+      if (result && !result.ok) {
+        setError(result.error);
+        return;
+      }
       setSaved("Changes saved.");
       setEditing(false);
       router.refresh();

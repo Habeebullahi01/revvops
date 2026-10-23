@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { createClient } from "@/lib/supabase/server";
+import type { ActionResult } from "@/lib/action-result";
 
 const PAYMENT_METHODS = ["cash", "transfer", "card", "other"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
@@ -24,15 +25,17 @@ export interface RecordPaymentInput {
  * trigger (0010) infers it from invoice total vs payments on the linked job
  * order, and the invoice's own state is derived on read.
  */
-export async function recordPayment(input: RecordPaymentInput) {
+export async function recordPayment(
+  input: RecordPaymentInput,
+): Promise<ActionResult<{ id: string; receipt_number: string }>> {
   const { profile } = await requireRole(["admin", "manager", "reception"]);
 
-  if (!input.invoiceId) throw new Error("Invoice is required");
+  if (!input.invoiceId) return { ok: false, error: "Invoice is required" };
   if (!PAYMENT_METHODS.includes(input.paymentMethod)) {
-    throw new Error("Unsupported payment method");
+    return { ok: false, error: "Unsupported payment method" };
   }
   const amount = Math.round(input.amount * 100) / 100;
-  if (!(amount > 0)) throw new Error("Amount must be greater than 0");
+  if (!(amount > 0)) return { ok: false, error: "Amount must be greater than 0" };
 
   const supabase = await createClient();
 
@@ -59,11 +62,12 @@ export async function recordPayment(input: RecordPaymentInput) {
   const balance =
     Math.round((Number(invoice.total_amount) - alreadyPaid) * 100) / 100;
   if (amount > balance) {
-    throw new Error(
-      `Amount is above the balance of ₦${balance.toLocaleString("en-NG", {
+    return {
+      ok: false,
+      error: `Amount is above the balance of ₦${balance.toLocaleString("en-NG", {
         minimumFractionDigits: 2,
       })}`,
-    );
+    };
   }
 
   const { data, error } = await supabase
@@ -112,7 +116,7 @@ export async function recordPayment(input: RecordPaymentInput) {
     },
   });
 
-  return { ...data, receipt_number: receipt.receipt_number };
+  return { ok: true, data: { id: data.id, receipt_number: receipt.receipt_number } };
 }
 
 /**

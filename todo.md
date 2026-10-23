@@ -2,6 +2,10 @@
 
 Working list. Tick things off as they land; keep the reasons short.
 
+> **All phases, in one place:** see [`PHASES.md`](./PHASES.md) for the phase
+> index (what each phase delivered, what it left open, and the Phase 3 scope).
+> This file stays the detailed working list.
+
 - [x] **Custom error pages** — 404 (`not-found`), 500 / render errors (`error`, `global-error`) in the same framed-sheet style as the rest of the app, with root and `(dashboard)` variants so the shell survives inside the dashboard.
 - [x] **Invoice detail page** — creating an invoice now sends the user to `/invoices/[id]`, which is the hub: record a payment, or raise the job order (button disabled until 50% of the invoice is paid — guarded in the UI *and* in the action).
 - [x] **Money formatting** — every monetary figure rendered with thousands separators and ₦ (lib/money.ts `formatNaira`), on the form, the list and the detail page.
@@ -119,8 +123,30 @@ silently. Ordered by how much they block.
   forgotten. Decide whether proof is *required* to save a payment or merely *encouraged*,
   because "required" changes `recordPayment`'s signature and every caller.
 
-- **`actual_amount` never lives on the invoice — recorded deviation from D4.** D4 said the
-  invoice would carry an `actual_amount`; it does not, and none will be added. The
+- **Expected failures must not `throw` across the server-action boundary.** Found while
+  fixing the duplicate-plate check (2026-10-23). `createVehicleForCustomer` threw a plain
+  `Error` for the `23505` duplicate plate; the client `try/catch` around the `await` looked
+  right and worked in `next dev`, but in a **production build** React surfaced it as
+  *"Minified React error #441 — an error occurred in the Server Components render"* and the
+  page's error boundary swallowed it instead of the dialog. The catch block was real; the
+  throw simply happened on a different layer (a render pass, not the caller's stack), so it
+  never reached it. The dev server hides this, which is why it cost so much time.
+
+  **Fixed for this action only** — it now returns a discriminated result
+  (`{ ok: true; vehicle } | { ok: false; error }`), and the dialog renders `result.error`
+  into its `[role="alert"]`. Everything else still throws.
+
+  **The rule to adopt, and the work to do later:** *expected, user-recoverable problems
+  return `{ ok: false, error }`; only genuinely unexpected faults throw.* Audit the remaining
+  server actions (`updateCustomer`, `updateVehicle`, `invoice-actions.ts`,
+  `job-order-actions.ts`, `receipt-actions.ts`) for `throw`-and-`catch` validation patterns
+  with the same latent production-only failure, and convert them. Two follow-ons worth doing
+  in the same pass: keep the flow-check suite running against `npm run build && npm run start`
+  (dev-only testing would not have caught this), and consider whether the error boundary
+  should distinguish an expected validation failure from a real 500.
+
+- **`actual_amount` never lives on the invoice — recorded deviation from Phase 2 D4.** Phase 2
+  D4 said the invoice would carry an `actual_amount`; it does not, and none will be added. The
   invoice→job-order hand-off sets the job order's `estimated_amount` to the invoice
   `total_amount` and leaves `actual_amount` null; the real figure is settled later by an
   officer via `updateJobOrder`. Recorded in `BUSINESS_RULES.md` §3.3 so the invoice is not
@@ -152,5 +178,60 @@ silently. Ordered by how much they block.
   behaviour, shared by all three flow checks. It fixes two latent leaks the two older copies
   had: `job-card-check.mjs` deleted invoices by id and skipped receipts entirely;
   `invoice-flow-check.mjs` never deleted `job_logs`.
+
+## Phase 3 — working list (from PRD alignment, 2026-10-23)
+
+The phase index and the full drift register live in [`PHASES.md`](./PHASES.md).
+The detailed slice specs, owner decisions (D1–D10), file lists and acceptance
+criteria live in [`PHASE3_PLAN.md`](./PHASE3_PLAN.md). This is the actionable
+checklist; each item names what already exists so nobody rebuilds it.
+
+**Decision status (2026-10-23):** D1–D7 answered; **D8–D10 still open**. Read the
+plan's decision table before starting a slice.
+
+### Track A — management visibility
+
+- [ ] **A1 — Dashboard** — revenue today, outstanding, active jobs; 30-day revenue chart;
+  recent job orders. `/dashboard` is currently a placeholder (admin/manager only). **No overdue
+  card (D1).**
+- [ ] **A2 — Monthly report** — totals (job orders, revenue, collected, outstanding), revenue by
+  category/billing type, technician productivity. **Print route (D2)**, no PDF library. Optional
+  scheduled email via B2. **No overdue section (D1).**
+- [ ] **A3 — Audit log viewer** — admin/manager read of `audit_logs`, filterable by entity,
+  action, actor and date. Rows are already written by `logAudit()` and immutable.
+- [ ] **A4 — User management** — admin-only invite/disable/role change. Depends on **D9**.
+
+### Track B — workshop floor
+
+- [ ] **B1 — Vehicle service history** — `service_history` table + RLS exist but **no app code
+  uses it**. Auto-create an entry when a job order is raised; technicians add minor non-billable
+  work; chronological per vehicle; convert a minor item into a job order (via an invoice).
+- [ ] **B2 — Email notifications** — job order created, payment received, monthly report.
+  **Best-effort only (D3): never roll back an action.** Provider chosen when the slice starts.
+  PRD §9 uses `$`; the build uses ₦.
+- [ ] **B3 — Technician PWA / offline** — **deferred (D4): will be built later.** Responsive
+  vehicle lens remains the mobile answer until then; do not ship a half-built sync queue.
+
+### Track C — sales + hardening
+
+- [ ] **C1 — Walk-in parts sale** — **deferred (D5), shape fixed:** customer required, vehicle
+  nullable, category↔billing-type relationship and sales form UI to be designed, and a `sales`
+  invoice can **never** raise a job order. Ripples through invoice rendering, search and the
+  job-order raise.
+- [ ] **C2 — Server-action error contract** — the general fix from the duplicate-plate bug (see
+  the entry above). Convert the remaining actions; keep flow checks on the production build.
+- [ ] **C3 — Payments require proof** — **required (D6)**: a photo **or** a receipt/reference
+  number, plus an optional note. Needs storage + RLS; upload-only would block counter practice.
+- [ ] **C4 — Job-order list filters** — PRD §8.2 also asks for **date range** and
+  **technician**; today the list filters on status + payment only.
+- [ ] **C5 — Payment gating — closed by D7.** Payments are **never blocked**, for any billing
+  type including post-service. The **≥ 50% minimum before job-order creation** stays. Work is
+  documentation only (`BUSINESS_RULES.md`), not new gates.
+- [ ] **C6 — Job card: signature lines** — Technician / Customer / Reception. **D8 open.**
+- [ ] **C7 — Open model/access items** — role matrix (**D9 open**); invoice draft/issued
+  (**D10 open**); drop or document the dead `job_order_items` table; PRD v1.0 into `docs/`
+  (§8.4); VIN on the invoice form and vehicle cards; fix `BUSINESS_RULES.md` accuracy
+  (`financial_status` *is* derived by trigger 0010; payments are never blocked; the ≥ 50% rule
+  is the single job-order gate).
 
 

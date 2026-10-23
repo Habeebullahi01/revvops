@@ -80,14 +80,18 @@ export function JobOrderPanel({
     setError("");
     setNotice("");
     try {
-      const jobOrder = await createJobOrderFromInvoice({
+      const result = await createJobOrderFromInvoice({
         invoiceId,
         dateIn,
         expectedDateOut: dateOut || undefined,
         assignedTechnicianId: technicianId || undefined,
         notes,
       });
-      setNotice(`${jobOrder.job_number} created.`);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setNotice(`${result.data.job_number} created.`);
       setOpen(false);
       router.refresh();
     } catch (caught) {

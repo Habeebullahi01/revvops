@@ -61,13 +61,17 @@ export function PaymentForm({
     setError("");
     setNotice("");
     try {
-      await recordPayment({
+      const result = await recordPayment({
         invoiceId,
         amount: value,
         paymentMethod: method,
         referenceNumber: reference,
         notes,
       });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       setAmount("");
       setReference("");
       setNotes("");

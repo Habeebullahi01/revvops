@@ -46,11 +46,16 @@ export function StatusControl({
     setError("");
     setNotice("");
     try {
-      await updateJobOrderExecutionStatus({
+      const result = await updateJobOrderExecutionStatus({
         jobOrderId,
         // The select only offers the five vocabulary values.
         executionStatus: value as (typeof EXECUTION_STATUSES)[number],
       });
+      if (!result.ok) {
+        setError(result.error);
+        setValue(status);
+        return;
+      }
       setNotice(`Status changed to ${executionStatusLabel(value)}.`);
       router.refresh();
     } catch (caught) {

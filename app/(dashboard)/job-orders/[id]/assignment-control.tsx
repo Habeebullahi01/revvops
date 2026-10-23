@@ -64,10 +64,14 @@ export function AssignmentControl({
     setSaving(true);
     setError("");
     try {
-      await assignJobOrder({
+      const result = await assignJobOrder({
         jobOrderId,
         technicianId: value || null,
       });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       setNotice(
         value ? "Technician assigned." : "Job order is now unassigned.",
       );

@@ -31,7 +31,7 @@ interface JobDetail {
   job_number: string;
   execution_status: string;
   financial_status: string;
-  complaint: string;
+  complaint: string | null;
   date_in: string;
   expected_date_out: string | null;
   actual_date_out: string | null;

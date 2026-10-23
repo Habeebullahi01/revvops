@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { createClient } from "@/lib/supabase/server";
+import type { ActionResult } from "@/lib/action-result";
 
 export interface ReceiptRow {
   id: string;
@@ -30,10 +31,12 @@ export interface ReceiptRow {
  * The invoice-first flow issues the original automatically inside
  * `recordPayment`; this action exists for the second and later copies.
  */
-export async function reprintReceipt(input: { receiptId: string }) {
+export async function reprintReceipt(input: {
+  receiptId: string;
+}): Promise<ActionResult<{ id: string; receipt_number: string }>> {
   const { profile } = await requireRole(["admin", "manager", "reception"]);
 
-  if (!input.receiptId) throw new Error("Receipt is required");
+  if (!input.receiptId) return { ok: false, error: "Receipt is required" };
 
   const supabase = await createClient();
 
@@ -46,7 +49,7 @@ export async function reprintReceipt(input: { receiptId: string }) {
     .maybeSingle();
 
   if (readError) throw new Error(readError.message);
-  if (!original) throw new Error("Receipt not found");
+  if (!original) return { ok: false, error: "Receipt not found" };
 
   // Always point at the ORIGINAL, never at another duplicate.
   const rootId = (original.original_receipt_id ??
@@ -92,5 +95,5 @@ export async function reprintReceipt(input: { receiptId: string }) {
     },
   });
 
-  return data;
+  return { ok: true, data };
 }

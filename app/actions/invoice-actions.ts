@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import type { ActionResult } from "@/lib/action-result";
 import {
   BILLING_TYPES,
   INVOICE_CATEGORIES,
@@ -34,25 +35,31 @@ export interface CreateInvoiceInput {
  * touches job_orders — the job order is a separate, explicit action.
  * `created_by` comes from the session, not the client.
  */
-export async function createInvoice(input: CreateInvoiceInput) {
+export async function createInvoice(
+  input: CreateInvoiceInput,
+): Promise<ActionResult<{ id: string }>> {
   // Officer-only: technicians have zero financial access (BUSINESS_RULES.md §5).
   const { profile } = await requireRole(["admin", "manager", "reception"]);
 
   const complaint = input.complaint.trim();
-  if (!complaint) throw new Error("Complaint / work description is required");
-  if (!input.customerId) throw new Error("Customer is required");
-  if (!input.vehicleId) throw new Error("Vehicle is required");
+  // Optional since 0016: a healthy vehicle in for a fitment has no complaint.
+  // Stored as NULL rather than an empty string so "not recorded" is one value,
+  // not two.
+  if (!input.customerId) return { ok: false, error: "Customer is required" };
+  if (!input.vehicleId) return { ok: false, error: "Vehicle is required" };
 
   const lines = input.costBreakdown.filter(
     (line) => line.description.trim() && line.amount > 0,
   );
-  if (lines.length === 0) throw new Error("Add at least one cost line");
-  if (input.totalAmount <= 0) throw new Error("Total amount must be greater than 0");
+  if (lines.length === 0)
+    return { ok: false, error: "Add at least one cost line" };
+  if (input.totalAmount <= 0)
+    return { ok: false, error: "Total amount must be greater than 0" };
   if (!BILLING_TYPES.includes(input.billingType)) {
-    throw new Error("Unsupported billing type");
+    return { ok: false, error: "Unsupported billing type" };
   }
   if (!INVOICE_CATEGORIES.includes(input.category)) {
-    throw new Error("Unsupported invoice category");
+    return { ok: false, error: "Unsupported invoice category" };
   }
 
   const supabase = await createClient();
@@ -62,7 +69,7 @@ export async function createInvoice(input: CreateInvoiceInput) {
     .insert({
       customer_id: input.customerId,
       vehicle_id: input.vehicleId,
-      complaint,
+      complaint: complaint || null,
       cost_breakdown: lines,
       total_amount: input.totalAmount,
       billing_type: input.billingType,
@@ -90,5 +97,5 @@ export async function createInvoice(input: CreateInvoiceInput) {
     },
   });
 
-  return data;
+  return { ok: true, data: { id: data.id } };
 }

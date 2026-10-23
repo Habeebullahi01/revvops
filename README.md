@@ -6,6 +6,9 @@ with role-based access enforced **at the database level** (Supabase Postgres
 + Row Level Security), not just in the UI.
 
 - **Business rules (source of truth):** [BUSINESS_RULES.md](./BUSINESS_RULES.md)
+- **Implementation phases (tracking):** [PHASES.md](./PHASES.md)
+- **Phase 3 detail (decisions, slices, acceptance):** [PHASE3_PLAN.md](./PHASE3_PLAN.md)
+- **Demo talking points (workshop owner):** [TALKING_POINTS.md](./TALKING_POINTS.md)
 - **Design system:** `.taste-skill/app/direction.json` (framed-sheet
   direction; light theme, IBM Plex Sans/Mono)
 - **Agent skills:** `.agents/skills/` (manifest in `skills-lock.json`)

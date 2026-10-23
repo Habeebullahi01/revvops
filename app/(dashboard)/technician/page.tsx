@@ -20,7 +20,7 @@ interface JobOrder {
   customer_id: string;
   vehicle_id: string;
   execution_status: string;
-  complaint: string;
+  complaint: string | null;
   assigned_technician_id: string | null;
   date_in: string;
   expected_date_out: string | null;
@@ -161,11 +161,15 @@ export default function TechnicianVehicleLensPage() {
     setSaving(true);
     setSaveError("");
     try {
-      await logExecutionStatus({
+      const result = await logExecutionStatus({
         jobOrderId: editingId,
         executionStatus: nextStatus,
         notes: note,
       });
+      if (!result.ok) {
+        setSaveError(result.error);
+        return;
+      }
       setEditingId("");
       if (selectedVehicle) await loadJobs(selectedVehicle.id);
       setMessage("Execution status updated through a job log.");
@@ -295,7 +299,7 @@ export default function TechnicianVehicleLensPage() {
                             <StatusPill status={job.execution_status} />
                           </td>
                           <td className="max-w-xs truncate px-3 py-2">
-                            {job.complaint}
+                            {job.complaint || <span className="text-muted-foreground">—</span>}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             {job.date_in}

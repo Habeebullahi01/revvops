@@ -78,7 +78,7 @@ export function NewVehicleDialog({
     setSaving(true);
     setError("");
     try {
-      const created = await createVehicleForCustomer({
+      const result = await createVehicleForCustomer({
         customerId,
         licensePlate: plate,
         make,
@@ -88,12 +88,15 @@ export function NewVehicleDialog({
         vin,
         odometer,
       });
-      await onCreated?.(created);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      await onCreated?.(result.data);
       changeOpen(false);
     } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Could not add the vehicle.",
-      );
+      console.error("createVehicleForCustomer failed", caught);
+      setError("Could not add the vehicle. Please try again.");
     } finally {
       setSaving(false);
     }

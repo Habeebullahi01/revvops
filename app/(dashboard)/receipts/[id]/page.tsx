@@ -34,7 +34,7 @@ interface PaymentRow {
 interface InvoiceRow {
   id: string;
   total_amount: string;
-  complaint: string;
+  complaint: string | null;
   created_at: string;
   customer: {
     name: string;

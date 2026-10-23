@@ -277,10 +277,11 @@ export function InvoiceForm() {
   };
 
   // ---- invoice submit ----
+  // "Work requested" is optional since 0016: a healthy vehicle in for a
+  // fitment has nothing to report, so a blank field must not block the form.
   const submitReady =
     Boolean(customerId) &&
     Boolean(vehicleId) &&
-    Boolean(complaint.trim()) &&
     billableLines.length > 0 &&
     totalValue > 0 &&
     !submitting;
@@ -292,7 +293,7 @@ export function InvoiceForm() {
     setSubmitting(true);
     setFormError("");
     try {
-      const invoice = await createInvoice({
+      const result = await createInvoice({
         customerId,
         vehicleId,
         complaint: complaint.trim(),
@@ -305,8 +306,12 @@ export function InvoiceForm() {
         })),
         totalAmount: Math.round(totalValue * 100) / 100,
       });
+      if (!result.ok) {
+        setFormError(result.error);
+        return;
+      }
       // The detail page is where payments and the job order happen.
-      router.push(`/invoices/${invoice.id}`);
+      router.push(`/invoices/${result.data.id}`);
       router.refresh();
     } catch (error) {
       setFormError(
@@ -336,7 +341,7 @@ export function InvoiceForm() {
           <CardHeader>
             <CardTitle>Invoice details</CardTitle>
             <CardDescription>
-              Customer, vehicle, complaint and a cost breakdown. Nothing here
+              Customer, vehicle, work requested and a cost breakdown. Nothing here
               creates a job order.
             </CardDescription>
           </CardHeader>
@@ -500,18 +505,13 @@ export function InvoiceForm() {
               )}
             </div>
 
-            {/* ── Complaint ────────────────────────────────────────── */}
+            {/* ── Work requested ───────────────────────────────────── */}
             <div className="space-y-2">
-              <Label htmlFor="invoice-complaint">
-                Complaint / work description{" "}
-                <span aria-hidden className="text-destructive">
-                  *
-                </span>
-              </Label>
+              <Label htmlFor="invoice-complaint">Work requested</Label>
               <Textarea
                 id="invoice-complaint"
                 rows={3}
-                placeholder="What the customer reports, and the work to be done"
+                placeholder="What the customer asked for — a fault to fix, or a fitment. Optional."
                 value={complaint}
                 onChange={(e) => setComplaint(e.target.value)}
               />

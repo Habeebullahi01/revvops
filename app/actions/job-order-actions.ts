@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { createClient } from "@/lib/supabase/server";
+import type { ActionResult, ActionStatus } from "@/lib/action-result";
 import { JOB_ORDER_PAID_RATIO } from "@/lib/invoice-rules";
 
 /**
@@ -37,15 +38,15 @@ export interface CreateJobOrderFromInvoiceInput {
  */
 export async function createJobOrderFromInvoice(
   input: CreateJobOrderFromInvoiceInput,
-) {
+): Promise<ActionResult<{ id: string; job_number: string }>> {
   const { profile } = await requireRole(["admin", "manager", "reception"]);
 
-  if (!input.invoiceId) throw new Error("Invoice is required");
+  if (!input.invoiceId) return { ok: false, error: "Invoice is required" };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.dateIn)) {
-    throw new Error("Date in is required");
+    return { ok: false, error: "Date in is required" };
   }
   if (input.expectedDateOut && !/^\d{4}-\d{2}-\d{2}$/.test(input.expectedDateOut)) {
-    throw new Error("Expected date out is not a valid date");
+    return { ok: false, error: "Expected date out is not a valid date" };
   }
 
   const supabase = await createClient();
@@ -58,7 +59,8 @@ export async function createJobOrderFromInvoice(
 
   if (invoiceError) throw new Error(invoiceError.message);
   if (!invoice) throw new Error("Invoice not found");
-  if (invoice.job_order_id) throw new Error("This invoice already has a job order");
+  if (invoice.job_order_id)
+    return { ok: false, error: "This invoice already has a job order" };
 
   const { data: payments, error: paymentsError } = await supabase
     .from("payments")
@@ -73,11 +75,12 @@ export async function createJobOrderFromInvoice(
   );
   const required = total * JOB_ORDER_PAID_RATIO;
   if (paid + 0.004 < required) {
-    throw new Error(
-      `At least 50% of the invoice must be paid before a job order can be raised (₦${paid.toFixed(
+    return {
+      ok: false,
+      error: `At least 50% of the invoice must be paid before a job order can be raised (₦${paid.toFixed(
         2,
       )} paid of the ₦${required.toFixed(2)} required)`,
-    );
+    };
   }
 
   // Gapless JO-YYYY-NNNN (numbering RPC, officers + server only).
@@ -133,7 +136,7 @@ export async function createJobOrderFromInvoice(
     },
   });
 
-  return jobOrder;
+  return { ok: true, data: jobOrder };
 }
 
 /**
@@ -148,12 +151,12 @@ export async function createJobOrderFromInvoice(
 export async function updateJobOrderExecutionStatus(input: {
   jobOrderId: string;
   executionStatus: OfficerExecutionStatus;
-}) {
+}): Promise<ActionStatus> {
   const { profile } = await requireRole(["admin", "manager", "reception"]);
 
-  if (!input.jobOrderId) throw new Error("Job order is required");
+  if (!input.jobOrderId) return { ok: false, error: "Job order is required" };
   if (!EXECUTION_STATUSES.includes(input.executionStatus)) {
-    throw new Error("Unsupported status");
+    return { ok: false, error: "Unsupported status" };
   }
 
   const supabase = await createClient();
@@ -165,12 +168,15 @@ export async function updateJobOrderExecutionStatus(input: {
     .maybeSingle();
 
   if (readError) throw new Error(readError.message);
-  if (!current) throw new Error("Job order not found");
+  if (!current) return { ok: false, error: "Job order not found" };
   if (current.execution_status === input.executionStatus) {
-    throw new Error("The job order is already in that status");
+    return { ok: false, error: "The job order is already in that status" };
   }
   if (current.execution_status === "cancelled") {
-    throw new Error("A cancelled job order is final and cannot be reopened");
+    return {
+      ok: false,
+      error: "A cancelled job order is final and cannot be reopened",
+    };
   }
 
   // An actual date out is what "completed" means on the paper trail; stamp
@@ -223,10 +229,10 @@ export async function updateJobOrderExecutionStatus(input: {
 export async function assignJobOrder(input: {
   jobOrderId: string;
   technicianId: string | null;
-}) {
+}): Promise<ActionStatus> {
   const { profile } = await requireRole(["admin", "manager", "reception"]);
 
-  if (!input.jobOrderId) throw new Error("Job order is required");
+  if (!input.jobOrderId) return { ok: false, error: "Job order is required" };
 
   const supabase = await createClient();
 
@@ -239,9 +245,13 @@ export async function assignJobOrder(input: {
       .maybeSingle();
 
     if (techError) throw new Error(techError.message);
-    if (!technician) throw new Error("Technician not found");
+    if (!technician)
+      return { ok: false, error: "Technician not found" };
     if (technician.role !== "technician" || !technician.is_active) {
-      throw new Error("That profile is not an active technician");
+      return {
+        ok: false,
+        error: "That profile is not an active technician",
+      };
     }
     technicianName = technician.full_name;
   }
@@ -253,7 +263,7 @@ export async function assignJobOrder(input: {
     .maybeSingle();
 
   if (readError) throw new Error(readError.message);
-  if (!job) throw new Error("Job order not found");
+  if (!job) return { ok: false, error: "Job order not found" };
 
   const { error } = await supabase
     .from("job_orders")
@@ -299,24 +309,27 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
  * but `financial_status` is never written here (it belongs to the payments
  * recorded against the invoice).
  */
-export async function updateJobOrder(input: UpdateJobOrderInput) {
+export async function updateJobOrder(
+  input: UpdateJobOrderInput,
+): Promise<ActionStatus> {
   const { profile } = await requireRole(["admin", "manager", "reception"]);
 
-  if (!input.jobOrderId) throw new Error("Job order is required");
-  if (!input.complaint?.trim()) throw new Error("Complaint is required");
-  if (!ISO_DATE.test(input.dateIn)) throw new Error("Date in is required");
+  if (!input.jobOrderId) return { ok: false, error: "Job order is required" };
+  // "Work requested" is optional since 0016 — see 0016_optional_complaint.sql.
+  if (!ISO_DATE.test(input.dateIn))
+    return { ok: false, error: "Date in is required" };
   if (input.expectedDateOut && !ISO_DATE.test(input.expectedDateOut)) {
-    throw new Error("Expected date out is not a valid date");
+    return { ok: false, error: "Expected date out is not a valid date" };
   }
   if (input.actualDateOut && !ISO_DATE.test(input.actualDateOut)) {
-    throw new Error("Actual date out is not a valid date");
+    return { ok: false, error: "Actual date out is not a valid date" };
   }
 
   let actualAmount: number | null = null;
   if (input.actualAmount != null && `${input.actualAmount}`.trim() !== "") {
     actualAmount = Number(input.actualAmount);
     if (!Number.isFinite(actualAmount) || actualAmount < 0) {
-      throw new Error("Actual amount must be zero or more");
+      return { ok: false, error: "Actual amount must be zero or more" };
     }
     actualAmount = Math.round(actualAmount * 100) / 100;
   }
@@ -330,12 +343,12 @@ export async function updateJobOrder(input: UpdateJobOrderInput) {
     .maybeSingle();
 
   if (readError) throw new Error(readError.message);
-  if (!current) throw new Error("Job order not found");
+  if (!current) return { ok: false, error: "Job order not found" };
 
   const { error } = await supabase
     .from("job_orders")
     .update({
-      complaint: input.complaint.trim(),
+      complaint: input.complaint?.trim() || null,
       date_in: input.dateIn,
       expected_date_out: input.expectedDateOut || null,
       actual_date_out: input.actualDateOut || null,

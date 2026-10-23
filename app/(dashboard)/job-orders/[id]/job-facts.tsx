@@ -21,7 +21,7 @@ import { formatNaira } from "@/lib/money";
 export interface JobFacts {
   jobOrderId: string;
   jobNumber: string;
-  complaint: string;
+  complaint: string | null;
   billingType: string;
   dateIn: string;
   expectedDateOut: string;
@@ -67,15 +67,19 @@ export function JobFactsCard({ facts }: { facts: JobFacts }) {
     setError("");
     setSaved("");
     try {
-      await updateJobOrder({
+      const result = await updateJobOrder({
         jobOrderId: facts.jobOrderId,
-        complaint: draft.complaint,
+        complaint: draft.complaint ?? "",
         dateIn: draft.dateIn,
         expectedDateOut: draft.expectedDateOut || null,
         actualDateOut: draft.actualDateOut || null,
         actualAmount: draft.actualAmount || null,
         notes: draft.notes || null,
       });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       setSaved("Job details saved.");
       setEditing(false);
       router.refresh();
@@ -132,8 +136,12 @@ export function JobFactsCard({ facts }: { facts: JobFacts }) {
 
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <div className="text-xs text-muted-foreground">Complaint / work</div>
-          <p className="text-sm whitespace-pre-wrap">{facts.complaint}</p>
+          <div className="text-xs text-muted-foreground">Work requested</div>
+          <p className="text-sm whitespace-pre-wrap">
+            {facts.complaint || (
+              <span className="text-muted-foreground">Not recorded</span>
+            )}
+          </p>
         </div>
 
         {!editing && (
@@ -159,15 +167,11 @@ export function JobFactsCard({ facts }: { facts: JobFacts }) {
             className="space-y-3 border-t border-rule pt-4"
           >
             <label className="block space-y-1.5">
-              <span className="text-sm font-medium">
-                Complaint{" "}
-                <span aria-hidden className="text-destructive">
-                  *
-                </span>
-              </span>
+              <span className="text-sm font-medium">Work requested</span>
               <Textarea
                 rows={3}
-                value={draft.complaint}
+                placeholder="A fault to fix, or a fitment. Optional."
+                value={draft.complaint ?? ""}
                 onChange={(event) =>
                   setDraft({ ...draft, complaint: event.target.value })
                 }
