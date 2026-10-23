@@ -7,6 +7,8 @@ import {
   executionStatusLabel,
 } from "@/components/status-pill";
 import { buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { requireRole } from "@/lib/auth";
 import { billingLabel } from "@/lib/invoice-vocabulary";
 import { likePattern, sanitizeQuery } from "@/lib/search";
@@ -100,11 +102,18 @@ function withParam(filters: Filters, key: string, value: string | null): string 
 export default async function JobOrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; payment?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    payment?: string;
+    from?: string;
+    to?: string;
+    technician?: string;
+  }>;
 }) {
   await requireRole(["admin", "manager", "reception"]);
 
-  const { q, status, payment } = await searchParams;
+  const { q, status, payment, from, to, technician } = await searchParams;
   const query = sanitizeQuery(q);
   const statusFilter = (EXECUTION_STATUSES as readonly string[]).includes(
     status ?? "",
@@ -116,13 +125,26 @@ export default async function JobOrdersPage({
   )
     ? (payment as string)
     : "";
+  const dateFrom = from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : "";
+  const dateTo = to && /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : "";
+  const technicianFilter = technician?.trim() || "";
   const filters: Filters = {
     q: query || undefined,
     status: statusFilter || undefined,
     payment: paymentFilter || undefined,
+    from: dateFrom || undefined,
+    to: dateTo || undefined,
+    technician: technicianFilter || undefined,
   };
 
   const supabase = await createClient();
+
+  const { data: technicians } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .eq("role", "technician")
+    .eq("is_active", true)
+    .order("full_name");
 
   // Status filters are plain column filters. The text search is either a
   // field match on the job itself, or a match through the joined customer /
@@ -135,6 +157,10 @@ export default async function JobOrdersPage({
     .limit(200);
   if (statusFilter) request = request.eq("execution_status", statusFilter);
   if (paymentFilter) request = request.eq("financial_status", paymentFilter);
+  if (technicianFilter)
+    request = request.eq("assigned_technician_id", technicianFilter);
+  if (dateFrom) request = request.gte("date_in", dateFrom);
+  if (dateTo) request = request.lte("date_in", dateTo);
   if (query) {
     request = request.or(
       `job_number.ilike.${likePattern(query)},complaint.ilike.${likePattern(query)}`,
@@ -171,7 +197,12 @@ export default async function JobOrdersPage({
         .select(ROW_COLUMNS)
         .in("id", relatedIds.slice(0, 200));
       if (statusFilter) relatedRequest = relatedRequest.eq("execution_status", statusFilter);
-      if (paymentFilter) relatedRequest = relatedRequest.eq("financial_status", paymentFilter);
+      if (paymentFilter)
+        relatedRequest = relatedRequest.eq("financial_status", paymentFilter);
+      if (technicianFilter)
+        relatedRequest = relatedRequest.eq("assigned_technician_id", technicianFilter);
+      if (dateFrom) relatedRequest = relatedRequest.gte("date_in", dateFrom);
+      if (dateTo) relatedRequest = relatedRequest.lte("date_in", dateTo);
 
       const relatedResult = await relatedRequest;
       const relatedRows = (relatedResult.data ?? []) as unknown as JobRow[];
@@ -181,7 +212,9 @@ export default async function JobOrdersPage({
     }
   }
 
-  const filtered = Boolean(query || statusFilter || paymentFilter);
+  const filtered = Boolean(
+    query || statusFilter || paymentFilter || dateFrom || dateTo || technicianFilter,
+  );
 
   return (
     <div className="space-y-4">
@@ -241,6 +274,61 @@ export default async function JobOrdersPage({
           </FilterLink>
         ))}
       </div>
+
+      <form
+        action="/job-orders"
+        method="get"
+        className="grid gap-3 rounded-lg border border-rule bg-card p-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end"
+      >
+        <input type="hidden" name="q" value={query} />
+        <input type="hidden" name="status" value={statusFilter} />
+        <input type="hidden" name="payment" value={paymentFilter} />
+        <div className="space-y-1.5">
+          <Label htmlFor="from">Date in from</Label>
+          <Input
+            id="from"
+            name="from"
+            type="date"
+            defaultValue={dateFrom}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="to">Date in to</Label>
+          <Input id="to" name="to" type="date" defaultValue={dateTo} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="technician">Technician</Label>
+          <select
+            id="technician"
+            name="technician"
+            defaultValue={technicianFilter}
+            className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <option value="">Any technician</option>
+            {(technicians ?? []).map((tech) => (
+              <option key={tech.id} value={tech.id}>
+                {tech.full_name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            className={buttonVariants({ size: "sm" })}
+          >
+            Apply
+          </button>
+          {filtered && (
+            <Link
+              href="/job-orders"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              Clear filters
+            </Link>
+          )}
+        </div>
+      </form>
 
       {error && (
         <p
