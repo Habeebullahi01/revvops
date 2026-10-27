@@ -82,7 +82,7 @@ export default async function JobOrderDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  await requireRole(["admin", "manager", "reception"]);
+  await requireRole(["admin", "manager", "reception", "technician"]);
 
   const supabase = await createClient();
 
@@ -90,11 +90,10 @@ export default async function JobOrderDetailPage({
     .from("job_orders")
     .select(
       `
-      id, job_number, execution_status, financial_status, complaint,
-      date_in, expected_date_out, actual_date_out, estimated_amount, actual_amount,
-      notes, created_at, created_by, assigned_technician_id,
+      id, job_number, execution_status, complaint,
+      date_in, expected_date_out, actual_date_out, notes, created_at, created_by, assigned_technician_id,
       customer:customer_id ( id, name, phone, email ),
-      vehicle:vehicle_id ( id, license_plate, make, model, year, vin, color )
+      vehicle:vehicle_id ( id, license_plate, make, model, year, color )
     `,
     )
     .eq("id", id)

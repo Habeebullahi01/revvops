@@ -22,17 +22,17 @@ const NAV: NavItem[] = [
   {
     href: "/job-orders",
     label: "Job Orders",
-    roles: ["admin", "manager", "reception"],
+    roles: ["admin", "manager", "reception", "technician"],
   },
   {
     href: "/customers",
     label: "Customers",
-    roles: ["admin", "manager", "reception"],
+    roles: ["admin", "manager", "reception", "technician"],
   },
   {
     href: "/vehicles",
     label: "Vehicles",
-    roles: ["admin", "manager", "reception"],
+    roles: ["admin", "manager", "reception", "technician"],
   },
   { href: "/reports", label: "Reports", roles: ["admin", "manager"] },
   { href: "/audit", label: "Audit", roles: ["admin", "manager"] },

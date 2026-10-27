@@ -111,7 +111,7 @@ export default async function JobOrdersPage({
     technician?: string;
   }>;
 }) {
-  await requireRole(["admin", "manager", "reception"]);
+  await requireRole(["admin", "manager", "reception", "technician"]);
 
   const { q, status, payment, from, to, technician } = await searchParams;
   const query = sanitizeQuery(q);
