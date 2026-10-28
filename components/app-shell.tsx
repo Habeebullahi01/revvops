@@ -111,14 +111,14 @@ export function AppShell({
         className="hidden shrink-0 flex-col md:flex"
         style={{ width: "var(--sidebar-width)" }}
       >
-        <div className="flex h-12 items-center gap-2 px-4">
+        <div className="flex min-h-12 items-center gap-2 px-4 py-1">
           <p
-            className="truncate text-sm font-semibold"
+            className="break-words text-sm font-semibold leading-tight"
             title={workshopName}
           >
             {workshopName}
           </p>
-          <span className="text-xs text-muted-foreground">WMS</span>
+          <span className="shrink-0 text-xs text-muted-foreground">WMS</span>
         </div>
         <div className="flex-1 overflow-y-auto px-3 pb-3">{navList}</div>
         <div className="flex items-center justify-end px-3 pb-3">
@@ -161,14 +161,14 @@ export function AppShell({
       {/* phone: the frame disappears, navigation lives in a drawer */}
       <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
         <SheetContent side="left" className="w-64 gap-0 bg-background p-3">
-          <SheetHeader className="flex h-12 items-center gap-2 p-0 pl-1">
+          <SheetHeader className="flex min-h-12 items-center gap-2 p-0 pl-1 py-1">
             <SheetTitle
-              className="truncate text-sm font-semibold"
+              className="break-words text-sm font-semibold leading-tight"
               title={workshopName}
             >
               {workshopName}
             </SheetTitle>
-            <span className="text-xs text-muted-foreground">WMS</span>
+            <span className="shrink-0 text-xs text-muted-foreground">WMS</span>
           </SheetHeader>
           <div className="flex-1 overflow-y-auto pr-1">{navList}</div>
           <div className="flex items-center justify-between gap-2 border-t pt-3">

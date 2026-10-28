@@ -1,126 +1,176 @@
-"use client";
-
-import { useState, useEffect } from "react";
+import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatNaira } from "@/lib/money";
+import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { buttonVariants } from "@/components/ui/button";
-import { formatNaira } from "@/lib/money";
 
-export default function PaymentsPage() {
-  const [payments, setPayments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState("");
-  const [method, setMethod] = useState("");
+export default async function PaymentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; method?: string }>;
+}) {
+  await requireRole(["admin", "manager", "reception"]);
 
-  useEffect(() => {
-    async function fetchPayments() {
-      const supabase = await createClient();
-      let q = query ? "%22 + query + %22" : "";
-      let m = method && method in ["cash", "transfer", "card", "other"] ? method : "";
-      let req = supabase
-        .from("payments")
-        .select("id, receipt_number, invoice_id, job_order_id, amount, payment_method, reference_number, notes, created_at, invoice ( customer_id )", { count: "exact" })
-        .order("created_at", { ascending: false });
-      if (q) {
-        req = req.ilike("receipt_number", q);
-        req = req.ilike("reference_number", q);
-      }
-      if (m) {
-        req = req.eq("payment_method", m);
-      }
-      const { data, error } = await req;
-      if (!error) setPayments(data ?? []);
-      setLoading(false);
-    }
-    fetchPayments();
-  }, [query, method]);
+  const { q, method } = await searchParams;
+  const query = (q ?? "").trim().toLowerCase();
+  const methodFilter =
+    method && ["cash", "transfer", "card", "other"].includes(method) ? method : "";
 
-  const total = payments.length;
-  const paidAmounts = payments.reduce(
-    (sum, p) => sum + Number(p.amount || 0),
-    0,
-  );
+  const supabase = await createClient();
 
-  const methodCounts = { cash: 0, transfer: 0, card: 0, other: 0 };
-  for (const p of payments) {
-    if (p.payment_method in methodCounts) {
-      methodCounts[p.payment_method]++;
-    }
+  let request = supabase
+    .from("payments")
+    .select(
+      "id, amount, payment_method, reference_number, notes, created_at, received_by, job_order_id, receipts(id, receipt_number)",
+    )
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (methodFilter) {
+    request = request.eq("payment_method", methodFilter);
   }
 
+  const { data, error } = await request;
+  let rows = (data ?? []) as any[];
+
+  if (query && rows.length > 0) {
+    rows = rows.filter((r) => {
+      if (r.receipts && Array.isArray(r.receipts)) {
+        for (const rcpt of r.receipts) {
+          if (rcpt.receipt_number?.toLowerCase().includes(query)) return true;
+        }
+      }
+      if (r.reference_number?.toLowerCase().includes(query)) return true;
+      return false;
+    });
+  }
+
+  const total = rows.length;
+  const totalAmount = rows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+
+  const methods = [
+    { value: "", label: "All methods" },
+    { value: "cash", label: "Cash" },
+    { value: "transfer", label: "Transfer" },
+    { value: "card", label: "Card" },
+    { value: "other", label: "Other" },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row gap-3">
-        <Input
-          placeholder="Receipt number, reference, or customer name"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="h-10 rounded-lg border border-input placeholder-text-sm text-sm"
-        />
-        <Input
-          type="text"
-          placeholder="cash / transfer / card / other"
-          value={method}
-          onChange={(e) => setMethod(e.target.value)}
-          className="h-10 rounded-lg border border-input placeholder-text-sm text-sm"
-        />
-        <Button
-          onClick={() => setQuery("")}
-          variant="outline"
-          className={buttonVariants({ size: "sm" })}>Clear
-        </Button>
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <h1 className="text-title font-semibold">Payments</h1>
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Payment records with receipts. Search by receipt number or reference.
+        </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Payments ({total})</CardTitle>
-          <CardDescription>
-            {paidAmounts.toLocaleString("en-NG", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })} collected {formatNaira(paidAmounts)}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {payments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No payments found.</p>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {total} payment{total !== 1 && "s"} found. <a href="/invoices" className="underline text-primary">View invoices</a>
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <form action="/payments" method="get" className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="q" className="sr-only">
+            Search
+          </Label>
+          <Input id="q" name="q" placeholder="Receipt # or reference" defaultValue={q} className="w-64" />
+        </div>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="method" className="sr-only">
+            Method
+          </Label>
+          <select
+            id="method"
+            name="method"
+            defaultValue={methodFilter}
+            className="h-9 rounded-lg border border-input bg-background text-foreground px-2.5 text-sm [&>option]:bg-background [&>option]:text-foreground"
+          >
+            {methods.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button type="submit" className={buttonVariants({ size: "sm" })}>
+          Apply
+        </button>
+        {(q || methodFilter) && (
+          <Link href="/payments" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            Clear
+          </Link>
+        )}
+      </form>
 
-      {paidAmounts > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Payment summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Total collected</p>
-                <p className="text-xl font-semibold tabular-nums">
-                  {formatNaira(paidAmounts)}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">By method</p>
-                <p className="text-sm font-medium">
-                  {methodCounts.cash} cash · {methodCounts.transfer} transfer ·
-                  {methodCounts.card} card · {methodCounts.other} other
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {error && (
+        <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Could not load payments: {error.message}
+        </p>
       )}
+
+      <div className="rounded-lg border border-rule bg-card">
+        <div className="flex items-center justify-between border-b border-rule px-4 py-3">
+          <div>
+            <p className="text-sm font-medium">
+              {total} payment{total === 1 ? "" : "s"}
+            </p>
+            <p className="text-xs text-muted-foreground">{formatNaira(totalAmount)} collected</p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-muted-foreground">
+                <th className="py-2 pl-4 pr-4 font-medium">Date</th>
+                <th className="py-2 pr-4 font-medium text-right">Amount</th>
+                <th className="py-2 pr-4 font-medium">Method</th>
+                <th className="py-2 pr-4 font-medium">Reference</th>
+                <th className="py-2 pr-4 font-medium">Job Order</th>
+                <th className="py-2 pr-4 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
+                    No payments found
+                  </td>
+                </tr>
+              )}
+              {rows.map((p) => {
+                const date = new Date(p.created_at).toLocaleString("en-NG", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                });
+                return (
+                  <tr key={p.id} className="border-t border-rule hover:bg-muted/40">
+                    <td className="py-2 pl-4 pr-4 text-xs text-muted-foreground">{date}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{formatNaira(p.amount)}</td>
+                    <td className="py-2 pr-4 capitalize">{p.payment_method}</td>
+                    <td className="py-2 pr-4 text-muted-foreground">{p.reference_number || "—"}</td>
+                    <td className="py-2 pr-4">
+                      {p.job_order_id ? (
+                        <Link href={`/job-orders/${p.job_order_id}`} className="underline text-primary">
+                          View
+                        </Link>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-2 pr-4">
+                      <Link href={`/payments/${p.id}`} className={buttonVariants({ size: "sm", variant: "outline" })}>
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

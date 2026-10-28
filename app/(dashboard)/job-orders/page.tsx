@@ -111,7 +111,7 @@ export default async function JobOrdersPage({
     technician?: string;
   }>;
 }) {
-  await requireRole(["admin", "manager", "reception", "technician"]);
+  const { profile } = await requireRole(["admin", "manager", "reception", "technician"]);
 
   const { q, status, payment, from, to, technician } = await searchParams;
   const query = sanitizeQuery(q);
@@ -134,86 +134,122 @@ export default async function JobOrdersPage({
     payment: paymentFilter || undefined,
     from: dateFrom || undefined,
     to: dateTo || undefined,
-    technician: technicianFilter || undefined,
   };
 
   const supabase = await createClient();
+  const isTechnician = profile.role === "technician";
 
-  const { data: technicians } = await supabase
-    .from("profiles")
-    .select("id, full_name")
-    .eq("role", "technician")
-    .eq("is_active", true)
-    .order("full_name");
+  let rows: any[] = [];
+  let error: any = null;
 
-  // Status filters are plain column filters. The text search is either a
-  // field match on the job itself, or a match through the joined customer /
-  // vehicle tables — PostgREST cannot mix a dot-path and a top-level `or`,
-  // so each dot path costs one extra id-only pass.
-  let request = supabase
-    .from("job_orders")
-    .select(ROW_COLUMNS)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (statusFilter) request = request.eq("execution_status", statusFilter);
-  if (paymentFilter) request = request.eq("financial_status", paymentFilter);
-  if (technicianFilter)
-    request = request.eq("assigned_technician_id", technicianFilter);
-  if (dateFrom) request = request.gte("date_in", dateFrom);
-  if (dateTo) request = request.lte("date_in", dateTo);
-  if (query) {
-    request = request.or(
-      `job_number.ilike.${likePattern(query)},complaint.ilike.${likePattern(query)}`,
-    );
-  }
-
-  const { data, error } = await request;
-  const directRows = (data ?? []) as unknown as JobRow[];
-
-  let rows = directRows;
-  if (query && !error) {
-    const pattern = likePattern(query);
-    const seen = new Set(directRows.map((row) => row.id));
-
-    // `ilike(column, pattern)` is PostgREST's function filter: it is the one
-    // form that reaches an embedded table without also selecting it (a
-    // dot-path filter needs the embed listed in `select`), and it avoids the
-    // row cap that a plain `select("id")` pass would hit on a busy table.
-    const relatedIdPasses = await Promise.all([
-      supabase.from("job_orders").select("id").ilike("customers.name", pattern),
-      supabase.from("job_orders").select("id").ilike("vehicles.license_plate", pattern),
-      supabase.from("job_orders").select("id").ilike("vehicles.make", pattern),
-      supabase.from("job_orders").select("id").ilike("vehicles.model", pattern),
-    ]);
-
-    const relatedIds = relatedIdPasses
-      .flatMap((pass) => (pass.data ?? []) as { id: string }[])
-      .map((row) => row.id)
-      .filter((id) => !seen.has(id));
-
-    if (relatedIds.length > 0) {
-      let relatedRequest = supabase
-        .from("job_orders")
-        .select(ROW_COLUMNS)
-        .in("id", relatedIds.slice(0, 200));
-      if (statusFilter) relatedRequest = relatedRequest.eq("execution_status", statusFilter);
-      if (paymentFilter)
-        relatedRequest = relatedRequest.eq("financial_status", paymentFilter);
-      if (technicianFilter)
-        relatedRequest = relatedRequest.eq("assigned_technician_id", technicianFilter);
-      if (dateFrom) relatedRequest = relatedRequest.gte("date_in", dateFrom);
-      if (dateTo) relatedRequest = relatedRequest.lte("date_in", dateTo);
-
-      const relatedResult = await relatedRequest;
-      const relatedRows = (relatedResult.data ?? []) as unknown as JobRow[];
-      rows = [...directRows, ...relatedRows].sort((a, b) =>
-        a.created_at < b.created_at ? 1 : -1,
+  if (isTechnician) {
+    // Technicians must use the tech view (no financial columns)
+    let request = supabase
+      .from("job_orders_tech_view")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (statusFilter) request = request.eq("execution_status", statusFilter);
+    if (dateFrom) request = request.gte("date_in", dateFrom);
+    if (dateTo) request = request.lte("date_in", dateTo);
+    if (query) {
+      request = request.or(
+        `job_number.ilike.${likePattern(query)},complaint.ilike.${likePattern(query)}`,
       );
     }
+    const { data, error: err } = await request;
+    error = err;
+    const directRows = (data ?? []) as any[];
+    rows = directRows;
+    // For tech view, we need to fetch related customer/vehicle names separately if needed
+    if (rows.length > 0) {
+      const customerIds = Array.from(new Set(rows.map((r) => r.customer_id).filter(Boolean)));
+      const vehicleIds = Array.from(new Set(rows.map((r) => r.vehicle_id).filter(Boolean)));
+      const [customersRes, vehiclesRes] = await Promise.all([
+        customerIds.length > 0 ? supabase.from("customers").select("id, name").in("id", customerIds) : { data: [] },
+        vehicleIds.length > 0 ? supabase.from("vehicles").select("id, license_plate, make, model").in("id", vehicleIds) : { data: [] },
+      ]);
+      const customerMap = new Map((customersRes.data ?? []).map((c: any) => [c.id, c]));
+      const vehicleMap = new Map((vehiclesRes.data ?? []).map((v: any) => [v.id, v]));
+      rows = rows.map((r) => ({
+        ...r,
+        customers: customerMap.get(r.customer_id) || null,
+        vehicles: vehicleMap.get(r.vehicle_id) || null,
+        assigned: null,
+        invoices: null,
+        financial_status: r.financial_status ?? "unknown",
+        estimated_amount: null,
+        actual_amount: null,
+      }));
+    }
+  } else {
+    // Status filters are plain column filters. The text search is either a
+    // field match on the job itself, or a match through the joined customer /
+    // vehicle tables — PostgREST cannot mix a dot-path and a top-level `or`,
+    // so each dot path costs one extra id-only pass.
+    let request = supabase
+      .from("job_orders")
+      .select(ROW_COLUMNS)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (statusFilter) request = request.eq("execution_status", statusFilter);
+    if (paymentFilter) request = request.eq("financial_status", paymentFilter);
+    if (dateFrom) request = request.gte("date_in", dateFrom);
+    if (dateTo) request = request.lte("date_in", dateTo);
+    if (query) {
+      request = request.or(
+        `job_number.ilike.${likePattern(query)},complaint.ilike.${likePattern(query)}`,
+      );
+    }
+
+    const result = await request;
+    error = result.error;
+    const directRows = (result.data ?? []) as unknown as JobRow[];
+
+    let resultRows = directRows;
+    if (query && !error) {
+      const pattern = likePattern(query);
+      const seen = new Set(directRows.map((row: any) => row.id));
+
+      // `ilike(column, pattern)` is PostgREST's function filter: it is the one
+      // form that reaches an embedded table without also selecting it (a
+      // dot-path filter needs the embed listed in `select`), and it avoids the
+      // row cap that a plain `select("id")` pass would hit on a busy table.
+      const relatedIdPasses = await Promise.all([
+        supabase.from("job_orders").select("id").ilike("customers.name", pattern),
+        supabase.from("job_orders").select("id").ilike("vehicles.license_plate", pattern),
+        supabase.from("job_orders").select("id").ilike("vehicles.make", pattern),
+        supabase.from("job_orders").select("id").ilike("vehicles.model", pattern),
+      ]);
+
+      const relatedIds = relatedIdPasses
+        .flatMap((pass) => (pass.data ?? []) as { id: string }[])
+        .map((row: any) => row.id)
+        .filter((id) => !seen.has(id));
+
+      if (relatedIds.length > 0) {
+        let relatedRequest = supabase
+          .from("job_orders")
+          .select(ROW_COLUMNS)
+          .in("id", relatedIds.slice(0, 200));
+        if (statusFilter) relatedRequest = relatedRequest.eq("execution_status", statusFilter);
+        if (paymentFilter)
+          relatedRequest = relatedRequest.eq("financial_status", paymentFilter);
+        if (dateFrom) relatedRequest = relatedRequest.gte("date_in", dateFrom);
+        if (dateTo) relatedRequest = relatedRequest.lte("date_in", dateTo);
+
+        const relatedResult = await relatedRequest;
+        const relatedRows = (relatedResult.data ?? []) as unknown as JobRow[];
+        resultRows = [...directRows, ...relatedRows].sort((a: any, b: any) =>
+          a.created_at < b.created_at ? 1 : -1,
+        );
+      }
+    }
+    rows = resultRows;
   }
 
   const filtered = Boolean(
-    query || statusFilter || paymentFilter || dateFrom || dateTo || technicianFilter,
+    query || statusFilter || paymentFilter || dateFrom || dateTo,
   );
 
   return (
@@ -295,22 +331,6 @@ export default async function JobOrdersPage({
         <div className="space-y-1.5">
           <Label htmlFor="to">Date in to</Label>
           <Input id="to" name="to" type="date" defaultValue={dateTo} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="technician">Technician</Label>
-          <select
-            id="technician"
-            name="technician"
-            defaultValue={technicianFilter}
-            className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            <option value="">Any technician</option>
-            {(technicians ?? []).map((tech) => (
-              <option key={tech.id} value={tech.id}>
-                {tech.full_name}
-              </option>
-            ))}
-          </select>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button

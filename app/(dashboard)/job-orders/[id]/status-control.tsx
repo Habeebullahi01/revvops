@@ -19,7 +19,7 @@ import {
 } from "@/components/status-pill";
 
 const selectCls =
-  "h-8 w-full appearance-none rounded-lg border border-input bg-transparent ps-2.5 pe-8 text-base outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 md:text-sm";
+  "h-8 w-full appearance-none rounded-lg border border-input bg-background text-foreground ps-2.5 pe-8 text-base outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 md:text-sm [&>option]:bg-background [&>option]:text-foreground";
 
 /**
  * Officer control for `execution_status`. Technicians never see this: they

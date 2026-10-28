@@ -35,6 +35,11 @@ const NAV: NavItem[] = [
     roles: ["admin", "manager", "reception", "technician"],
   },
   { href: "/reports", label: "Reports", roles: ["admin", "manager"] },
+  {
+    href: "/payments",
+    label: "Payments",
+    roles: ["admin", "manager", "reception"],
+  },
   { href: "/audit", label: "Audit", roles: ["admin", "manager"] },
   { href: "/technician", label: "My Jobs", roles: ["technician"] },
 ];

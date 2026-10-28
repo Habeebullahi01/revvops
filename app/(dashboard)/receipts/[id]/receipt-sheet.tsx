@@ -1,18 +1,5 @@
 import { formatNaira, NAIRA } from "@/lib/money";
 
-/**
- * The payment receipt — a sheet of A4 the customer is handed.
- *
- * Unlike the job card (which is deliberately moneyless because it sits in a
- * windscreen), a receipt is a financial document: it states what was paid,
- * how, against which invoice, and what is still outstanding.
- *
- * A reprint is a separate row flagged `is_duplicate` and is marked as such on
- * paper — a duplicate must never pass for an original (owner decision D4).
- *
- * Presentational only: all data is resolved by the page.
- */
-
 export interface ReceiptData {
   receipt_number: string;
   is_duplicate: boolean | null;
@@ -77,9 +64,7 @@ export function ReceiptSheet({ receipt }: { receipt: ReceiptData }) {
       <header className="flex items-start justify-between gap-6 border-b-2 border-foreground/80 pb-4">
         <div>
           <h1 className="text-title font-semibold">{receipt.workshop_name}</h1>
-          <p className="text-sm text-muted-foreground">
-            Payment receipt
-          </p>
+          <p className="text-sm text-muted-foreground">Payment receipt</p>
         </div>
         <div className="text-right">
           <div className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -151,7 +136,6 @@ export function ReceiptSheet({ receipt }: { receipt: ReceiptData }) {
         </p>
       </section>
 
-      {/* The one table that matters: what was paid, and where it left the invoice. */}
       <section className="py-5">
         <table className="w-full text-sm">
           <tbody className="divide-y divide-rule">
@@ -169,9 +153,7 @@ export function ReceiptSheet({ receipt }: { receipt: ReceiptData }) {
             </tr>
             {receipt.reference_number && (
               <tr>
-                <td className="py-2 text-muted-foreground">
-                  Reference / teller
-                </td>
+                <td className="py-2 text-muted-foreground">Reference / teller</td>
                 <td className="py-2 text-right font-mono text-xs">
                   {receipt.reference_number}
                 </td>
@@ -203,9 +185,7 @@ export function ReceiptSheet({ receipt }: { receipt: ReceiptData }) {
         </table>
 
         {receipt.notes && (
-          <p className="mt-3 text-sm text-muted-foreground">
-            Note: {receipt.notes}
-          </p>
+          <p className="mt-3 text-sm text-muted-foreground">Note: {receipt.notes}</p>
         )}
       </section>
 

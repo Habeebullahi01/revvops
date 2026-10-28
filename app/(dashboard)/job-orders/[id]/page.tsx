@@ -16,7 +16,7 @@ import { requireRole } from "@/lib/auth";
 import { formatNaira } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { AssignmentControl } from "./assignment-control";
+// import { AssignmentControl } from "./assignment-control";
 import { JobCard, type CardCostLine } from "./job-card";
 import { JobFactsCard } from "./job-facts";
 import { JobTimeline, type TimelineEntry } from "./job-timeline";
@@ -82,22 +82,65 @@ export default async function JobOrderDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  await requireRole(["admin", "manager", "reception", "technician"]);
+  const { profile } = await requireRole(["admin", "manager", "reception", "technician"]);
 
   const supabase = await createClient();
+  const isTechnician = profile.role === "technician";
 
-  const { data, error } = await supabase
-    .from("job_orders")
-    .select(
-      `
-      id, job_number, execution_status, complaint,
-      date_in, expected_date_out, actual_date_out, notes, created_at, created_by, assigned_technician_id,
-      customer:customer_id ( id, name, phone, email ),
-      vehicle:vehicle_id ( id, license_plate, make, model, year, color )
-    `,
-    )
-    .eq("id", id)
-    .maybeSingle();
+  let data: any = null;
+  let error: any = null;
+
+  if (isTechnician) {
+    const res = await supabase
+      .from("job_orders_tech_view")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    data = res.data;
+    error = res.error;
+    if (data) {
+      const [customerRes, vehicleRes] = await Promise.all([
+        data.customer_id
+          ? supabase
+              .from("customers")
+              .select("id, name, phone, email")
+              .eq("id", data.customer_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+        data.vehicle_id
+          ? supabase
+              .from("vehicles")
+              .select("id, license_plate, make, model, year, color, vin")
+              .eq("id", data.vehicle_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+      data = {
+        ...data,
+        customer: customerRes.data,
+        vehicle: vehicleRes.data,
+        created_by: null,
+        estimated_amount: null,
+        actual_amount: null,
+        notes: data.notes ?? null,
+      };
+    }
+  } else {
+    const res = await supabase
+      .from("job_orders")
+      .select(
+        `
+        id, job_number, execution_status, financial_status, complaint,
+        date_in, expected_date_out, actual_date_out, notes, created_at, created_by, assigned_technician_id, estimated_amount, actual_amount,
+        customer:customer_id ( id, name, phone, email ),
+        vehicle:vehicle_id ( id, license_plate, make, model, year, color, vin )
+      `,
+      )
+      .eq("id", id)
+      .maybeSingle();
+    data = res.data;
+    error = res.error;
+  }
 
   if (error) throw new Error(error.message);
   if (!data) notFound();
@@ -328,13 +371,10 @@ export default async function JobOrderDetailPage({
             status={job.execution_status}
           />
 
-          <AssignmentControl
-            jobOrderId={job.id}
-            technicianId={job.assigned_technician_id}
-            technicianName={assignedName}
-          />
+          {!isTechnician && null}
 
-          <Card>
+          {!isTechnician && (
+            <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <ReceiptTextIcon className="size-4 text-brand" />
@@ -401,7 +441,8 @@ export default async function JobOrderDetailPage({
                 </p>
               )}
             </CardContent>
-          </Card>
+            </Card>
+          )}
         </div>
       </div>
       </div>

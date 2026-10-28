@@ -28,7 +28,7 @@ export default async function VehiclesPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  await requireRole(["admin", "manager", "reception"]);
+  await requireRole(["admin", "manager", "reception", "technician"]);
 
   const { q } = await searchParams;
   const query = sanitizeQuery(q);

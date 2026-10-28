@@ -29,6 +29,7 @@ interface JobOrder {
   id: string;
   job_number: string;
   execution_status: string;
+  financial_status?: string | null;
   complaint: string | null;
   date_in: string;
   expected_date_out: string | null;
@@ -273,7 +274,8 @@ ndash; financial data is not visible on this page (technician-safe view).
                 <tr className="text-left text-xs text-muted-foreground">
                   <th className="pb-2 pr-4 font-medium">Job #</th>
                   <th className="pb-2 pr-4 font-medium">Vehicle</th>
-                  <th className="pb-2 font-medium">Status</th>
+                  <th className="pb-2 pr-4 font-medium">Status</th>
+                  <th className="pb-2 pr-4 font-medium">Payment</th>
                   <th className="pb-2 font-medium text-right">Actions</th>
                 </tr>
               </thead>
@@ -287,13 +289,27 @@ ndash; financial data is not visible on this page (technician-safe view).
                   return (
                     <tr key={job.id} className="border-t border-rule align-top">
                       <td className="py-2 pr-4 font-medium">
-                        {job.job_number}
-                      </td>
+                          <a
+                            href={`/job-orders/${job.id}`}
+                            className="underline text-primary hover:underline-opacity-70"
+                          >
+                            {job.job_number}
+                          </a>
+                        </td>
                       <td className="py-2 pr-4 text-muted-foreground">
                         {license}
                       </td>
                       <td className="py-2 pr-4">
                         <StatusPill status={job.execution_status} />
+                      </td>
+                      <td className="py-2 pr-4">
+                        {job.financial_status ? (
+                          <span className="text-xs text-muted-foreground">
+                            {job.financial_status === 'paid' ? 'Paid' : job.financial_status === 'part_paid' ? 'Part paid' : job.financial_status === 'unpaid' ? 'Unpaid' : job.financial_status}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="py-2">
                         <Button
@@ -313,59 +329,6 @@ ndash; financial data is not visible on this page (technician-safe view).
           </CardContent>
         </Card>
       )}
-
-      {/* Vehicle lens section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Vehicle Lens</CardTitle>
-          <CardDescription>
-            Look up a vehicle by license plate to see its owner and every job order
-            attached to it. Execution status only — financial data is not visible
-            on this page.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-4">
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            <Input
-              type="text"
-              placeholder="License plate (e.g. ABA 1234)"
-              value={searchPlate}
-              onChange={(e) => setSearchPlate(e.target.value)}
-              className={jobSearchCls}
-            />
-            <Button
-              onClick={handleSearchPlate}
-              disabled={loading}
-              className={buttonVariants({ size: "sm" })}
-            >
-              {loading ? "Loading..." : "Search"}
-            </Button>
-          </div>
-
-          {selectedVehicle && (
-            <>
-              <p className="text-sm font-medium mb-2">
-                {selectedCustomer?.name ?? "—"}{' '}
-                <span className="text-xs text-muted-foreground">
-                  ({selectedVehicle.license_plate})
-                </span>
-              </p>
-              <p className="text-xs text-muted-foreground mb-3">
-                {jobs.length > 0
-                  ? `${jobs.length} job order${jobs.length > 1 ? "s" : ""} on this vehicle.`
-                  : "No job orders on this vehicle yet."}
-              </p>
-              {/* etc... */}
-            </>
-          )}
-
-          {!selectedVehicle && (
-            <p className="text-sm text-muted-foreground">
-              Enter a license plate above to look up a vehicle and its job orders.
-            </p>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }

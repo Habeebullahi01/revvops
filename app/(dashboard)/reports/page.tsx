@@ -86,7 +86,7 @@ export default async function ReportsPage({
       .lt("created_at", nextMonthStart),
     supabase
       .from("job_orders")
-      .select("id, execution_status, assigned_technician_id, profiles:assigned_technician_id(full_name)")
+      .select("id, execution_status")
       .gte("created_at", monthStart)
       .lt("created_at", nextMonthStart),
   ]);
@@ -114,13 +114,7 @@ export default async function ReportsPage({
   }
 
   const byTech = new Map<string, { name: string; completed: number; total: number }>();
-  for (const job of jobs) {
-    const techId = job.assigned_technician_id;
-    if (!techId) continue;
-    const name = (Array.isArray(job.profiles) ? job.profiles[0]?.full_name : (job.profiles as any)?.full_name) || "—";
-    const cur = byTech.get(techId) ?? { name, completed: 0, total: 0 };
-    byTech.set(techId, { ...cur, total: cur.total + 1, completed: cur.completed + (job.execution_status === "completed" ? 1 : 0) });
-  }
+  // Technician assignment UI removed; skip building this map
 
   const options = monthOptions(month);
 
@@ -254,34 +248,12 @@ export default async function ReportsPage({
 
         <Card>
           <CardHeader>
-            <CardTitle>Technician productivity</CardTitle>
-            <CardDescription>Jobs created this month by assigned technician</CardDescription>
+            <CardTitle>Workload</CardTitle>
+            <CardDescription>Jobs created this month</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-muted-foreground">
-                    <th className="pb-2 pr-4 font-medium">Technician</th>
-                    <th className="pb-2 pr-4 font-medium">Jobs</th>
-                    <th className="pb-2 font-medium">Completed</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from(byTech.entries()).map(([id, v]) => (
-                    <tr key={id} className="border-t border-rule">
-                      <td className="py-2 pr-4">{v.name}</td>
-                      <td className="py-2 pr-4 tabular-nums">{v.total}</td>
-                      <td className="py-2 tabular-nums">{v.completed}</td>
-                    </tr>
-                  ))}
-                  {byTech.size === 0 && (
-                    <tr>
-                      <td colSpan={3} className="py-2 text-sm text-muted-foreground">No assigned jobs</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            <div className="text-sm text-muted-foreground">
+              Technician assignment data has been removed.
             </div>
           </CardContent>
         </Card>

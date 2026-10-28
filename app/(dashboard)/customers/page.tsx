@@ -22,7 +22,7 @@ export default async function CustomersPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  await requireRole(["admin", "manager", "reception"]);
+  await requireRole(["admin", "manager", "reception", "technician"]);
 
   const { q } = await searchParams;
   const query = sanitizeQuery(q);
